@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { checkAccess, matchRule } from "../lib/guards";
+import { checkAccess, loginPathFor, matchRule } from "../lib/guards";
 import { draftHasProgress, loadDraft } from "../lib/draft";
 import { useLang } from "../i18n/LanguageContext";
 import { Icon } from "./icons";
@@ -8,11 +8,13 @@ import { Icon } from "./icons";
 /**
  * Role guard: reads auth state (role from /me/profile via the JWT claim),
  * applies the pure checkAccess() rules, and redirects:
- *   - not authed  -> /login (with returnTo), unless a guest draft exists
+ *   - not authed  -> the role's own login page (staff consoles never see the
+ *                    customer OTP login), with returnTo
  *   - wrong role   -> 403 page
+ * Guest mode counts as a guest pass for guestAllowed routes (scan flow).
  */
 export function Guard({ children }: { children: JSX.Element }) {
-  const { isAuthed, role, profileLoading } = useAuth();
+  const { isAuthed, isGuest, role, profileLoading } = useAuth();
   const location = useLocation();
   const path = location.pathname;
 
@@ -21,11 +23,12 @@ export function Guard({ children }: { children: JSX.Element }) {
   const rule = matchRule(path);
   if (!rule) return <Navigate to="/" replace />;
 
-  const hasGuestDraft = draftHasProgress(loadDraft());
-  const access = checkAccess({ isAuthed, role }, path, hasGuestDraft);
+  const guestPass = draftHasProgress(loadDraft()) || isGuest;
+  const access = checkAccess({ isAuthed, role }, path, guestPass);
 
   if (access === "login") {
-    return <Navigate to={`/login?returnTo=${encodeURIComponent(path)}`} replace />;
+    const loginPath = loginPathFor(path);
+    return <Navigate to={`${loginPath}?returnTo=${encodeURIComponent(path)}`} replace />;
   }
   if (access === "forbidden") {
     return <Navigate to="/403" replace />;

@@ -17,7 +17,18 @@ export interface User {
 export interface Profile {
   user_id: string; name: string | null; age_band: string | null; gender: string | null;
   is_minor: boolean; guardian_name: string | null; guardian_phone: string | null;
-  guardian_consented_at: string | null; created_at: string; updated_at: string;
+  guardian_consented_at: string | null;
+  /** Storage path of the profile photo inside the profile-photos bucket (null = none). */
+  photo_path: string | null;
+  /** Order addresses, managed by the user (JSON array on the profile row). */
+  addresses: Address[];
+  created_at: string; updated_at: string;
+}
+
+/** One saved order address (kept as a JSON array on the profile row). */
+export interface Address {
+  id: string; name: string; phone: string; city: string;
+  address_line: string; label: string | null; is_default: boolean;
 }
 
 export interface Consent {
@@ -128,6 +139,12 @@ export interface AuditEntry {
 }
 
 export interface RefreshToken { token_hash: string; user_id: string; expires_at: string; created_at: string; }
+
+/** Single-use password-reset token. Only the HMAC hash is stored. */
+export interface PasswordResetRow {
+  token_hash: string; user_id: string; expires_at: string;
+  used_at: string | null; created_at: string;
+}
 
 export interface DeletionRequest { id: string; user_id: string; scheduled_for: string; note: string; status: string; created_at: string; }
 

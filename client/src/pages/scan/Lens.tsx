@@ -5,7 +5,8 @@ import { useLang } from "../../i18n/LanguageContext";
 import { useAuth } from "../../auth/AuthContext";
 import { Chip, ErrorCard, apiErrorMessage, toast } from "../../components/ui";
 import { Icon } from "../../components/icons";
-import { meApi, scansApi } from "../../api/client";
+import { authApi, meApi, scansApi } from "../../api/client";
+import { NEPAL_MOBILE } from "../../lib/password";
 import type { PhotoAngle } from "../../api/types";
 
 const ANGLES: PhotoAngle[] = ["hairline", "crown", "parting", "temples", "shedding"];
@@ -82,7 +83,7 @@ function meanLuminance(video: HTMLVideoElement): number {
 
 export default function Lens() {
   const { t } = useLang();
-  const { isAuthed } = useAuth();
+  const { isAuthed, isGuest } = useAuth();
   const { scanId, draft, updateDraft, goStage, detail, reload } = useScan();
   const navigate = useNavigate();
 
@@ -224,8 +225,13 @@ export default function Lens() {
   }
 
   // Guest soft-gate: Lens requires login (flow doc entry rule).
+  // Guest mode is fine until Stage 2 — here a guest hits the verification
+  // wall: phone OTP converts the guest into a real account and claims the
+  // guest scan (claim_guest_scan_id). Non-guest visitors get the sign-in page.
   if (!isAuthed) {
-    return (
+    return isGuest ? (
+      <GuestVerifyWall />
+    ) : (
       <div>
         <h1>{t("lens.title")}</h1>
         <div className="card center">
@@ -390,6 +396,119 @@ function ConsentCheckbox({ label, onAgree, busy, tickFirst, agreeLabel }: {
       >
         {busy ? "…" : agreeLabel}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Stage-2 verification wall for guests (P6).
+ * Guest mode is fine until photos — here the guest verifies their phone via
+ * OTP, which converts them into a real account and claims the in-progress
+ * guest scan (claim_guest_scan_id on /auth/otp/verify). After success the
+ * wall disappears and the Lens UI renders for the now-signed-in user.
+ */
+function GuestVerifyWall() {
+  const { t } = useLang();
+  const { scanId, reload } = useScan();
+  const { login } = useAuth();
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+
+  const toE164 = (p: string) => `+977${p}`;
+
+  async function sendOtp() {
+    const p = phone.trim();
+    if (!NEPAL_MOBILE.test(p)) {
+      setError(t("login.invalidPhone"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await authApi.requestOtp(toE164(p));
+      if (res.dev_code) setDevCode(res.dev_code); // dev/staging only
+      setStep("otp");
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    const c = code.trim();
+    if (!/^\d{6}$/.test(c)) {
+      setError(t("login.invalidOtp"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // login() clears guest mode and claims the scan server-side.
+      await login(toE164(phone.trim()), c, scanId || undefined);
+      toast(t("auth.verifiedToast"));
+      await reload(); // refresh scan detail + draft (guest flag flips off)
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <h1>{t("lens.title")}</h1>
+      <div className="card center">
+        <div style={{ color: "var(--green)" }}><Icon.lock size={44} /></div>
+        <h3>{t("auth.verifyGuestTitle")}</h3>
+        <p className="muted">{t("auth.verifyGuestBody")}</p>
+        {error && <ErrorCard message={error} />}
+        {step === "phone" ? (
+          <div style={{ textAlign: "left" }}>
+            <label className="fl" htmlFor="gv-phone">{t("login.phoneLabel")}</label>
+            <input
+              id="gv-phone"
+              type="tel"
+              inputMode="numeric"
+              placeholder={t("login.phonePlaceholder")}
+              value={phone}
+              maxLength={10}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+              autoComplete="tel"
+            />
+            <button className="btn btn-p" onClick={sendOtp} disabled={busy}>
+              {busy ? t("common.loading") : t("login.sendOtp")}
+            </button>
+          </div>
+        ) : (
+          <div style={{ textAlign: "left" }}>
+            <label className="fl" htmlFor="gv-otp">{t("login.otpLabel")}</label>
+            <input
+              id="gv-otp"
+              type="tel"
+              inputMode="numeric"
+              placeholder={t("login.otpPlaceholder")}
+              value={code}
+              maxLength={6}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              autoComplete="one-time-code"
+            />
+            {devCode && (
+              <p className="tiny"><span className="kbd">dev: {devCode}</span></p>
+            )}
+            <button className="btn btn-p" onClick={verify} disabled={busy}>
+              {busy ? t("login.loggingIn") : t("login.verify")}
+            </button>
+            <button className="linklike" onClick={() => setStep("phone")}>
+              {t("common.back")}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

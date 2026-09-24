@@ -2,6 +2,8 @@ import express from "express";
 import path from "node:path";
 import { authOptional } from "./middleware/auth";
 import { authRoutes } from "./modules/auth/routes";
+import { emailOtpRoutes } from "./modules/auth/emailotp";
+import { googleAuthRoutes } from "./modules/auth/google";
 import { meRoutes } from "./modules/me/routes";
 import { scansRoutes } from "./modules/scans/routes";
 import { doctorRoutes } from "./modules/doctor/routes";
@@ -25,6 +27,8 @@ export function buildApp(deps: Deps, opts: AppOptions = {}) {
   const api = express.Router();
   api.use(authOptional(deps.jwtSecret));
   api.use("/auth", authRoutes(deps));
+  api.use("/auth", emailOtpRoutes(deps));
+  api.use("/auth", googleAuthRoutes(deps));
   api.use("/me", meRoutes(deps));
   api.use("/scans", scansRoutes(deps));
   api.use("/doctor", doctorRoutes(deps));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAccess, matchRule } from "../lib/guards";
+import { checkAccess, loginPathFor, matchRule } from "../lib/guards";
 import type { GuardState } from "../lib/guards";
 import type { Role } from "../api/types";
 
@@ -65,5 +65,59 @@ describe("route guards — longest-prefix matching", () => {
       const ok = paths.some((p) => checkAccess(st, p) === "allow");
       expect(ok, `no reachable route for role ${role}`).toBe(true);
     }
+  });
+});
+
+describe("staff login routing (P3)", () => {
+  it("sends unauthenticated staff-console visits to the role's own login", () => {
+    expect(loginPathFor("/admin")).toBe("/admin/login");
+    expect(loginPathFor("/admin/flags")).toBe("/admin/login");
+    expect(loginPathFor("/doctor")).toBe("/doctor/login");
+    expect(loginPathFor("/doctor/case/abc")).toBe("/doctor/login");
+    expect(loginPathFor("/pharmacy")).toBe("/pharmacy/login");
+    expect(loginPathFor("/coach")).toBe("/coach/login");
+  });
+
+  it("sends customer routes to the customer login", () => {
+    expect(loginPathFor("/")).toBe("/login");
+    expect(loginPathFor("/plan")).toBe("/login");
+    expect(loginPathFor("/scan/xyz")).toBe("/login");
+  });
+
+  it("staff login pages are public (no auth required)", () => {
+    for (const p of ["/admin/login", "/doctor/login", "/pharmacy/login", "/coach/login"]) {
+      expect(matchRule(p)?.auth, p).toBe(false);
+      expect(checkAccess(anon, p), p).toBe("allow");
+    }
+  });
+
+  it("auth pages are public; /profile needs auth", () => {
+    for (const p of ["/signup", "/forgot-password", "/reset-password"]) {
+      expect(matchRule(p)?.auth, p).toBe(false);
+    }
+    expect(matchRule("/profile")?.auth).toBe(true);
+    expect(checkAccess(anon, "/profile")).toBe("login");
+    expect(checkAccess(cust("coach"), "/profile")).toBe("allow");
+  });
+});
+
+describe("guest mode (P6)", () => {
+  it("guests may reach the scan entry (/) and the scan flow", () => {
+    expect(checkAccess(anon, "/", true)).toBe("allow"); // guest pass via draft/flag
+    expect(checkAccess(anon, "/scan", true)).toBe("allow");
+    expect(checkAccess(anon, "/scan/xyz", true)).toBe("allow");
+    expect(checkAccess(anon, "/scan/xyz/map", true)).toBe("allow");
+    expect(checkAccess(anon, "/scan/xyz/submit", true)).toBe("allow");
+  });
+
+  it("anonymous users without a guest draft still go to login for /", () => {
+    expect(checkAccess(anon, "/")).toBe("login");
+    expect(checkAccess(anon, "/plan")).toBe("login");
+  });
+
+  it("guests cannot reach staff consoles or customer-only pages", () => {
+    expect(checkAccess(anon, "/admin", true)).toBe("login");
+    expect(checkAccess(anon, "/plan", true)).toBe("login");
+    expect(checkAccess(anon, "/orders", true)).toBe("login");
   });
 });

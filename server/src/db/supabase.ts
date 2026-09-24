@@ -508,6 +508,19 @@ export class SupabaseStore implements Store {
     await this.sb.from("refresh_tokens").delete().eq("token_hash", hash);
   }
 
+  // ---- password resets ----
+  async savePasswordReset(r: { token_hash: string; user_id: string; expires_at: string }) {
+    const { error } = await this.sb.from("password_resets").upsert(r, { onConflict: "token_hash" });
+    if (error) throw error;
+  }
+  async getPasswordReset(tokenHash: string) {
+    const { data } = await this.sb.from("password_resets").select("*").eq("token_hash", tokenHash).maybeSingle();
+    return data;
+  }
+  async deletePasswordReset(tokenHash: string) {
+    await this.sb.from("password_resets").delete().eq("token_hash", tokenHash);
+  }
+
   // ---- deletion requests ----
   async createDeletionRequest(r: { user_id: string; scheduled_for: string; note: string }) {
     const { data, error } = await this.sb.from("deletion_requests").insert(r).select().single();

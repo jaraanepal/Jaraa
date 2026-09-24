@@ -12,6 +12,7 @@ import {
   ANGLES, MAX_BYTES, processUpload, PhotoError, type StorageAdapter,
 } from "../../lib/photos";
 import { checkPhotoQuality } from "../../lib/gemini";
+import { sendEmail, scanSubmittedEmail } from "../../lib/brevo";
 import { evaluateRedFlags } from "../scan/redflags";
 import { computeRootScores, ROOT_LABELS, ROOTS, scoreColor, weakestRoots, type RootKey, type RootScore } from "../scan/scoring";
 import { STAGES, stageName, stageNumber, validateTransition, stagesCompleted, evaluatePaths, toContractScan } from "../scan/engine";
@@ -376,6 +377,15 @@ export function scansRoutes(deps: Deps): Router {
       sla_due_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
     });
     await store.updateScan(scan.id, { status: "submitted", version: scan.version + 1 });
+    // journey email: scan submitted (fire-and-forget — a failed email must never break the request)
+    try {
+      const user = await store.getUserById(scan.user_id);
+      const profile = user ? await store.getProfile(user.id) : null;
+      if (user?.email) {
+        const m = scanSubmittedEmail(profile?.name);
+        sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
+      }
+    } catch (e) { console.error("[scan-submitted notify]", e); }
     res.status(201).json(toContractCase(kase, scan.user_id));
   }));
 

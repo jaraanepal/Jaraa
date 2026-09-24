@@ -18,6 +18,7 @@ export function testDeps() {
     otp: new OtpService(new LogSmsProvider(), store, "test-hmac-secret", Date.now, true),
     sms: new LogSmsProvider(),
     storage: memoryStorage(),
+    profileStorage: memoryStorage(),
     chunks: new ChunkAssembler(),
     jwtSecret: JWT_SECRET,
     secureCookies: false,

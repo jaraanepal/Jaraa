@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useLang } from "../i18n/LanguageContext";
 import { useAuth } from "../auth/AuthContext";
 import { useFlags } from "../auth/FlagsContext";
+import type { Role } from "../api/types";
 import { Icon } from "./icons";
 import { Modal, ToastHost } from "./ui";
 
@@ -92,22 +93,21 @@ function InstallPrompt() {
   );
 }
 
+type NavItem = { to: string; key: string; icon: (p: { size?: number }) => JSX.Element; end?: boolean };
+
+/** Bottom mobile nav — EXACTLY four items, always in this order (Problem 2). */
 function BottomNav() {
   const { t } = useLang();
-  const { role } = useAuth();
-  const items: Array<{ to: string; key: string; icon: (p: { size?: number }) => JSX.Element }> = [
-    { to: "/", key: "nav.home", icon: Icon.home },
-    { to: "/scan", key: "nav.scan", icon: Icon.scan },
-    { to: "/plan", key: "nav.plan", icon: Icon.plan },
+  const items: NavItem[] = [
+    { to: "/", key: "nav.home", icon: Icon.home, end: true },
     { to: "/progress", key: "nav.progress", icon: Icon.chart },
     { to: "/kits", key: "nav.kits", icon: Icon.box },
+    { to: "/profile", key: "nav.profile", icon: Icon.user },
   ];
-  if (role === "doctor") items.push({ to: "/doctor", key: "nav.doctor", icon: Icon.doc });
-  if (role === "admin") items.push({ to: "/admin", key: "nav.admin", icon: Icon.gear });
   return (
     <nav className="bottomnav" aria-label="Primary">
       {items.map((i) => (
-        <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? "active" : "")} end={i.to === "/"}>
+        <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? "active" : "")} end={i.end}>
           {i.icon({ size: 22 })}
           <span>{t(i.key)}</span>
         </NavLink>
@@ -116,16 +116,132 @@ function BottomNav() {
   );
 }
 
+/**
+ * Left slide-in sidebar drawer — everything NOT in the bottom nav:
+ * Scan, Plan, Orders, Teleconsult, role-gated staff consoles, Settings.
+ * (Problem 2: the drawer is the only home for these links.)
+ */
+function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useLang();
+  const { role } = useAuth();
+  const location = useLocation();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const openBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Close on navigation.
+  useEffect(() => {
+    if (open) onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // Keep the closed drawer out of the tab order (React 18 types lack `inert`).
+  useEffect(() => {
+    const el = asideRef.current;
+    if (!el) return;
+    if (open) el.removeAttribute("inert");
+    else el.setAttribute("inert", "");
+  }, [open ]);
+
+  // Escape to close + focus management + body scroll lock.
+  useEffect(() => {
+    if (!open) return;
+    openBtnRef.current = document.activeElement as HTMLButtonElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    closeRef.current?.focus();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+      openBtnRef.current?.focus();
+    };
+  }, [open, onClose]);
+
+  const main: NavItem[] = [
+    { to: "/scan", key: "nav.scan", icon: Icon.scan },
+    { to: "/plan", key: "nav.plan", icon: Icon.plan },
+    { to: "/orders", key: "nav.orders", icon: Icon.truck },
+    { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
+  ];
+  const staff: Array<{ role: Role; to: string; key: string; icon: NavItem["icon"] }> = [
+    { role: "doctor", to: "/doctor", key: "nav.doctor", icon: Icon.doc },
+    { role: "admin", to: "/admin", key: "nav.admin", icon: Icon.gear },
+    { role: "pharmacy", to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck },
+    { role: "coach", to: "/coach", key: "nav.coach", icon: Icon.book },
+  ];
+
+  return (
+    <div className={`drawerroot${open ? " open" : ""}`} aria-hidden={open ? undefined : "true"}>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside
+        ref={asideRef}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("nav.menu")}
+      >
+        <div className="drawer-head">
+          <strong>{t("nav.menu")}</strong>
+          <button ref={closeRef} className="drawer-close" onClick={onClose} aria-label={t("nav.closeMenu")}>
+            <Icon.cross size={20} />
+          </button>
+        </div>
+        <nav aria-label={t("nav.menu")}>
+          {main.map((i) => (
+            <NavLink key={i.to} to={i.to} onClick={onClose} className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}>
+              {i.icon({ size: 20 })}
+              <span>{t(i.key)}</span>
+            </NavLink>
+          ))}
+          {staff
+            .filter((s) => s.role === role)
+            .map((s) => (
+              <NavLink key={s.to} to={s.to} onClick={onClose} className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}>
+                {s.icon({ size: 20 })}
+                <span>{t(s.key)}</span>
+              </NavLink>
+            ))}
+        </nav>
+        <div className="drawer-settings">
+          <h3>{t("nav.settings")}</h3>
+          <div className="rowflex">
+            <span className="muted">{t("common.language")}</span>
+            <span className="spacer" />
+            <LanguageToggle />
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { t } = useLang();
   const { isAuthed, role, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const hideChrome = location.pathname === "/login";
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
     <div className="app">
       <header className="topbar">
+        {isAuthed && !hideChrome && (
+          <button
+            className="hamburger"
+            onClick={() => setDrawerOpen(true)}
+            aria-label={t("nav.menu")}
+            aria-haspopup="dialog"
+            aria-expanded={drawerOpen}
+          >
+            <Icon.menu size={22} />
+          </button>
+        )}
         <Link to="/" className="brand" style={{ color: "#fff", textDecoration: "none" }} aria-label="Jaraa home">
           <img src="/logo.png" alt="Jaraa logo" />
           <div>
@@ -164,6 +280,7 @@ export default function Layout() {
       </footer>
 
       {!hideChrome && isAuthed && <BottomNav />}
+      {!hideChrome && isAuthed && <Drawer open={drawerOpen} onClose={closeDrawer} />}
       <ToastHost />
     </div>
   );

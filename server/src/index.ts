@@ -7,7 +7,7 @@ import { MemoryStore } from "./db/memory";
 import { SupabaseStore } from "./db/supabase";
 import { OtpService } from "./lib/otp";
 import { buildSmsProvider } from "./lib/sms";
-import { memoryStorage, supabaseStorage } from "./lib/photos";
+import { memoryStorage, supabaseStorage, profilePhotosStorage } from "./lib/photos";
 import { ChunkAssembler } from "./lib/chunks";
 import { hashPassword } from "./lib/jwt";
 import type { Deps } from "./deps";
@@ -38,6 +38,7 @@ async function main() {
   const sms = buildSmsProvider();
   let store: MemoryStore | SupabaseStore;
   let storage: ReturnType<typeof memoryStorage> | ReturnType<typeof supabaseStorage>;
+  let profileStorage: ReturnType<typeof memoryStorage> | ReturnType<typeof profilePhotosStorage>;
 
   if (env.hasSupabase) {
     const sb = new SupabaseStore(env.supabaseUrl, env.supabaseServiceKey);
@@ -45,11 +46,13 @@ async function main() {
     await sb.seedScanRules(RULE_SEEDS);
     store = sb;
     storage = supabaseStorage({ storage: sb.storage() });
+    profileStorage = profilePhotosStorage({ storage: sb.storage() });
     console.log("[boot] using Supabase store");
   } else {
     console.warn("[boot] SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set — in-memory store (dev/test only)");
     store = new MemoryStore();
     storage = memoryStorage();
+    profileStorage = memoryStorage();
   }
 
   const deps: Deps = {
@@ -57,6 +60,7 @@ async function main() {
     otp: new OtpService(sms, store, env.otpHmacSecret, Date.now, env.otpDevMode),
     sms,
     storage,
+    profileStorage,
     chunks: new ChunkAssembler(),
     jwtSecret: env.jwtSecret,
     secureCookies: (process.env.COOKIE_SECURE ?? "true").toLowerCase() === "true",

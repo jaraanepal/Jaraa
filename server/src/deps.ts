@@ -10,6 +10,8 @@ export interface Deps {
   otp: OtpService;
   sms: SmsProvider;
   storage: StorageAdapter;
+  /** Private 'profile-photos' bucket (profile pictures only). */
+  profileStorage: StorageAdapter;
   chunks: ChunkAssembler;
   jwtSecret: string;
   secureCookies: boolean;

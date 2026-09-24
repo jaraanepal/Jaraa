@@ -12,7 +12,7 @@ const STAGE_KEYS = ["home.stage1", "home.stage2", "home.stage3", "home.stage4"] 
 
 export default function Home() {
   const { t } = useLang();
-  const { role } = useAuth();
+  const { role, isAuthed } = useAuth();
   const flags = useFlags();
   const navigate = useNavigate();
   const [planState, setPlanState] = useState<"loading" | "approved" | "pending" | "error">("loading");
@@ -27,7 +27,9 @@ export default function Home() {
     else if (role === "coach") navigate("/coach", { replace: true });
   }, [role, navigate]);
 
+  // Guests have no plan to fetch — the plan card is hidden for them.
   useEffect(() => {
+    if (!isAuthed) return;
     let alive = true;
     meApi
       .getPlan()
@@ -43,7 +45,7 @@ export default function Home() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isAuthed]);
 
   const draft = loadDraft();
   const resumable = draftHasProgress(draft) && draft.scanId;
@@ -93,6 +95,7 @@ export default function Home() {
         </button>
       )}
 
+      {isAuthed && (
       <div className="card">
         {planState === "loading" && <Loading />}
         {planState === "approved" && (
@@ -107,6 +110,7 @@ export default function Home() {
         {planState === "error" && <p className="muted">{t("errors.network")}</p>}
         <Link className="linklike" to="/progress">{t("home.viewProgress")}</Link>
       </div>
+      )}
 
       {flags.cosmetic_kits && (
         <div className="card rowflex">

@@ -6,7 +6,7 @@ import type {
   User, Role, Profile, Consent, OtpRow, Scan, TimelineEvent, Photo, PhotoAngle,
   RootScoreRow, RedFlag, ScanRule, Case, Annotation, Plan, PlanItemInput, PlanItem,
   Product, Kit, Order, Payment, Consult, Checkin, FeatureFlag, AuditEntry,
-  RefreshToken, DeletionRequest, AnalyticsSnapshot,
+  RefreshToken, PasswordResetRow, DeletionRequest, AnalyticsSnapshot,
 } from "./types";
 
 const now = () => new Date().toISOString();
@@ -36,6 +36,7 @@ export class MemoryStore implements Store {
   audit: AuditEntry[] = [];
   auditSeq = 1;
   refreshTokens = new Map<string, RefreshToken>();
+  passwordResets = new Map<string, PasswordResetRow>();
   deletions = new Map<string, DeletionRequest>();
 
   constructor() {
@@ -83,6 +84,7 @@ export class MemoryStore implements Store {
     const cur = this.profiles.get(userId) ?? {
       user_id: userId, name: null, age_band: null, gender: null, is_minor: false,
       guardian_name: null, guardian_phone: null, guardian_consented_at: null,
+      photo_path: null, addresses: [],
       created_at: now(), updated_at: now(),
     };
     const next = { ...cur, ...p, user_id: userId, updated_at: now() };
@@ -444,6 +446,13 @@ export class MemoryStore implements Store {
   }
   async getRefreshToken(hash: string) { return this.refreshTokens.get(hash) ?? null; }
   async deleteRefreshToken(hash: string) { this.refreshTokens.delete(hash); }
+
+  // ---- password resets ----
+  async savePasswordReset(r: { token_hash: string; user_id: string; expires_at: string }) {
+    this.passwordResets.set(r.token_hash, { ...r, used_at: null, created_at: now() });
+  }
+  async getPasswordReset(tokenHash: string) { return this.passwordResets.get(tokenHash) ?? null; }
+  async deletePasswordReset(tokenHash: string) { this.passwordResets.delete(tokenHash); }
 
   // ---- deletion requests ----
   async createDeletionRequest(r: { user_id: string; scheduled_for: string; note: string }) {

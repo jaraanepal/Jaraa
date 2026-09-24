@@ -45,3 +45,18 @@ export const orderConfirmationEmail = (orderNo: string, totalNpr: number) => ({
   subject: `Jaraa order ${orderNo} confirmed 🧾`,
   html: shell("Order confirmed", `<p>Thank you! Your order <b>${orderNo}</b> for <b>NPR ${totalNpr}</b> is confirmed. We will notify you when it ships.</p>`),
 });
+
+export const scanSubmittedEmail = (name?: string | null) => ({
+  subject: "Your Jaraa scan is with a dermatologist 🔍",
+  html: shell("Scan submitted", `<p>Namaste${name ? ` ${name}` : ""},</p><p>Your Root Scan has been submitted and is now in the dermatologist review queue. We will email you as soon as your personalised plan is ready.</p>`),
+});
+
+export const orderShippedEmail = (orderNo: string) => ({
+  subject: `Jaraa order ${orderNo} has shipped 📦`,
+  html: shell("Order shipped", `<p>Good news — your order <b>${orderNo}</b> is on its way. Track it in the Jaraa app under Kits → My orders.</p>`),
+});
+
+export const emailOtpEmail = (code: string) => ({
+  subject: `Jaraa: your code is ${code}`,
+  html: shell("Your Jaraa sign-in code", `<p>Your one-time sign-in code is:</p><p style="font-size:28px;letter-spacing:6px"><b>${code}</b></p><p>It expires in 5 minutes. Never share this code with anyone — Jaraa staff will never ask for it.</p>`),
+});

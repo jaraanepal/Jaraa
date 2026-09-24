@@ -21,7 +21,15 @@ export interface RouteRule {
 
 export const ROUTE_RULES: Record<string, RouteRule> = {
   "/login": { auth: false },
-  "/": { auth: true, roles: ["customer"] },
+  "/signup": { auth: false },
+  "/forgot-password": { auth: false },
+  "/reset-password": { auth: false },
+  "/admin/login": { auth: false },
+  "/doctor/login": { auth: false },
+  "/pharmacy/login": { auth: false },
+  "/coach/login": { auth: false },
+  "/profile": { auth: true }, // any signed-in role
+  "/": { auth: true, roles: ["customer"], guestAllowed: true }, // guests may start/resume a scan
   "/scan": { auth: false, guestAllowed: true }, // /scan/:id prefix
   "/plan": { auth: true, roles: ["customer"] },
   "/progress": { auth: true, roles: ["customer"] },
@@ -33,6 +41,25 @@ export const ROUTE_RULES: Record<string, RouteRule> = {
   "/pharmacy": { auth: true, roles: ["pharmacy", "admin"] },
   "/coach": { auth: true, roles: ["customer", "coach"] },
 };
+
+/**
+ * Where an unauthenticated visitor is sent for a given path.
+ * Staff consoles NEVER land on the customer OTP login — each role gets its
+ * own dedicated email+password page.
+ */
+const STAFF_LOGIN_PATHS: [string, string][] = [
+  ["/admin", "/admin/login"],
+  ["/doctor", "/doctor/login"],
+  ["/pharmacy", "/pharmacy/login"],
+  ["/coach", "/coach/login"],
+];
+
+export function loginPathFor(path: string): string {
+  for (const [prefix, loginPath] of STAFF_LOGIN_PATHS) {
+    if (path === prefix || path.startsWith(prefix + "/")) return loginPath;
+  }
+  return "/login";
+}
 
 export function matchRule(path: string): RouteRule | null {
   // Longest-prefix match so /scan/:id and /doctor/case/:id resolve.

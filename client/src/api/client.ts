@@ -10,6 +10,7 @@ import type {
   Annotation,
   AnnotationShape,
   ApiErrorBody,
+  Address,
   AuditListResponse,
   Case,
   CaseListResponse,
@@ -27,6 +28,7 @@ import type {
   OrderStatus,
   OtpRequestResponse,
   OtpVerifyResponse,
+  PasswordAuthResponse,
   Photo,
   PhotoAngle,
   Plan,
@@ -166,6 +168,33 @@ export const authApi = {
       body: json({ phone, code, claim_guest_scan_id }),
       noRetry: true,
     }),
+  /** Email-or-phone + password sign-up. Same flow for every role. */
+  signup: (payload: { email?: string; phone?: string; password: string; password_confirm: string }) =>
+    request<PasswordAuthResponse>("/auth/signup", {
+      method: "POST",
+      body: json(payload),
+      noRetry: true,
+    }),
+  /** Email-or-phone + password login. Same flow for every role. */
+  loginPassword: (payload: { email?: string; phone?: string; password: string }) =>
+    request<PasswordAuthResponse>("/auth/login", {
+      method: "POST",
+      body: json(payload),
+      noRetry: true,
+    }),
+  /** Always resolves ok:true — the server never reveals whether the email exists. */
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>("/auth/forgot-password", {
+      method: "POST",
+      body: json({ email }),
+      noRetry: true,
+    }),
+  resetPassword: (payload: { token: string; password: string; password_confirm: string }) =>
+    request<{ ok: true }>("/auth/reset-password", {
+      method: "POST",
+      body: json(payload),
+      noRetry: true,
+    }),
   logout: () =>
     request<void>("/auth/logout", { method: "POST", noRetry: true }).catch(() => undefined),
 };
@@ -175,6 +204,25 @@ export const meApi = {
   getProfile: () => request<Profile>("/me/profile"),
   updateProfile: (patch: Partial<Pick<Profile, "name" | "age_band" | "gender" | "language">>) =>
     request<Profile>("/me/profile", { method: "PATCH", body: json(patch) }),
+  uploadProfilePhoto: (photo: Blob) => {
+    const fd = new FormData();
+    fd.append("photo", photo, "profile.jpg");
+    return request<{ photo_url: string; photo_path: string; addresses: Address[] }>(
+      "/me/profile/photo",
+      { method: "POST", body: fd },
+    );
+  },
+  deleteProfilePhoto: () => request<void>("/me/profile/photo", { method: "DELETE" }),
+  listAddresses: () => request<{ addresses: Address[] }>("/me/addresses"),
+  addAddress: (a: Omit<Address, "id">) =>
+    request<{ address: Address }>("/me/addresses", { method: "POST", body: json(a) }),
+  updateAddress: (id: string, patch: Partial<Omit<Address, "id">>) =>
+    request<{ address: Address }>(`/me/addresses/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: json(patch),
+    }),
+  deleteAddress: (id: string) =>
+    request<void>(`/me/addresses/${encodeURIComponent(id)}`, { method: "DELETE" }),
   recordConsent: (type: ConsentType, version: string, granted: boolean) =>
     request<Consent>("/me/consents", { method: "POST", body: json({ type, version, granted }) }),
   getPlan: () => request<Plan>("/me/plan"),
@@ -347,4 +395,4 @@ export const adminApi = {
   },
 };
 
-export type { RedFlagType };
+export type { RedFlagType, Address };

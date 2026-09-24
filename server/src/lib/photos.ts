@@ -65,9 +65,8 @@ export async function processUpload(
   };
 }
 
-/** Supabase Storage adapter (private bucket 'scan-photos'). */
-export function supabaseStorage(sb: { storage: any }): StorageAdapter {
-  const bucket = "scan-photos";
+/** Supabase Storage adapter bound to an arbitrary bucket. */
+function bucketStorage(sb: { storage: any }, bucket: string): StorageAdapter {
   return {
     async putPrivate(path, bytes, contentType) {
       const { error } = await sb.storage.from(bucket).upload(path, bytes, { contentType, upsert: true });
@@ -82,6 +81,53 @@ export function supabaseStorage(sb: { storage: any }): StorageAdapter {
       await sb.storage.from(bucket).remove([path]);
     },
   };
+}
+
+/** Supabase Storage adapter (private bucket 'scan-photos'). */
+export function supabaseStorage(sb: { storage: any }): StorageAdapter {
+  return bucketStorage(sb, "scan-photos");
+}
+
+/** Supabase Storage adapter (private bucket 'profile-photos'). */
+export function profilePhotosStorage(sb: { storage: any }): StorageAdapter {
+  return bucketStorage(sb, "profile-photos");
+}
+
+export interface ProcessedProfilePhoto {
+  storagePath: string;
+  signedUrl: string;
+}
+
+/**
+ * Profile photo pipeline: validate -> EXIF auto-rotate + strip ->
+ * 512px cover-crop -> store (private profile-photos bucket, upsert so a
+ * re-upload replaces the previous photo at a stable path).
+ */
+export async function processProfilePhoto(
+  storage: StorageAdapter,
+  opts: { userId: string; bytes: Buffer },
+): Promise<ProcessedProfilePhoto> {
+  const { userId, bytes } = opts;
+  if (bytes.length > MAX_BYTES) throw new PhotoError(413, "Photo exceeds 8 MB after compression.");
+  let meta;
+  try {
+    meta = await sharp(bytes).metadata();
+  } catch {
+    throw new PhotoError(415, "unsupported image type");
+  }
+  if (!["jpeg", "png", "webp"].includes(meta.format || "")) {
+    throw new PhotoError(415, "unsupported image type");
+  }
+  // .rotate() applies EXIF orientation; NOT calling .withMetadata() strips all EXIF.
+  const normalized = await sharp(bytes)
+    .rotate()
+    .resize(512, 512, { fit: "cover" })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+  const storagePath = `profiles/${userId}.jpg`;
+  await storage.putPrivate(storagePath, normalized, "image/jpeg");
+  const signedUrl = await storage.getSignedUrl(storagePath, 900);
+  return { storagePath, signedUrl };
 }
 
 /** In-memory storage for tests / dev fallback. */

@@ -64,6 +64,14 @@ export interface OtpVerifyResponse {
   user: VerifiedUser;
 }
 
+/** Session returned by password signup / password login (every role). */
+export interface PasswordAuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in_sec: number;
+  user: { id: string; phone: string; email: string | null; role: Role };
+}
+
 /* ------------------------------------ me --- */
 export interface Profile {
   user_id: string;
@@ -74,7 +82,21 @@ export interface Profile {
   gender: "female" | "male" | "other";
   language: Lang2;
   guardian_consent: boolean;
+  /** Fresh signed URL of the profile photo (null = none). */
+  photo_url?: string | null;
+  addresses?: Address[];
   timezone: string;
+}
+
+/** A saved order address (stored as a JSON array on the profile row). */
+export interface Address {
+  id: string;
+  name: string;
+  phone: string;
+  city: string;
+  address_line: string;
+  label?: string | null;
+  is_default: boolean;
 }
 
 export type ConsentType = "photo" | "teleconsult" | "marketing" | "data";

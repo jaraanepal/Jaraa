@@ -9,7 +9,15 @@ interface AuthState {
   phone: string | null;
   profile: Profile | null;
   profileLoading: boolean;
+  /** Guest mode: local flag only — guests browse + scan until Stage 2. */
+  isGuest: boolean;
+  continueAsGuest: () => void;
+  exitGuest: () => void;
   login: (phone: string, code: string, claimGuestScanId?: string) => Promise<void>;
+  /** Email-or-phone + password sign-in. Same flow for every role. */
+  passwordLogin: (identifier: string, password: string) => Promise<void>;
+  /** Email-or-phone + password sign-up. Same flow for every role. */
+  signup: (payload: { email?: string; phone?: string; password: string; password_confirm: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<Profile | null>;
 }
@@ -20,12 +28,18 @@ const Ctx = createContext<AuthState>({
   phone: null,
   profile: null,
   profileLoading: false,
+  isGuest: false,
+  continueAsGuest: () => {},
+  exitGuest: () => {},
   login: async () => {},
+  passwordLogin: async () => {},
+  signup: async () => {},
   logout: async () => {},
   refreshProfile: async () => null,
 });
 
 const PHONE_KEY = "jaraa:phone";
+const GUEST_KEY = "jaraa:guest";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [tokenSet, setTokenSet] = useState(false);
@@ -39,6 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [guest, setGuest] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(GUEST_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const loadProfile = useCallback(async (): Promise<Profile | null> => {
     setProfileLoading(true);
@@ -76,13 +97,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = useCallback(
-    async (ph: string, code: string, claimGuestScanId?: string) => {
-      const res = await authApi.verifyOtp(ph, code, claimGuestScanId);
+  const exitGuest = useCallback(() => {
+    setGuest(false);
+    try {
+      localStorage.removeItem(GUEST_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const continueAsGuest = useCallback(() => {
+    setGuest(true);
+    try {
+      localStorage.setItem(GUEST_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Shared session handling for every password/OTP sign-in. Clears guest mode. */
+  const applySession = useCallback(
+    async (res: { access_token: string; user: { id: string; phone: string; email?: string | null; role?: Role } }) => {
       setAccessToken(res.access_token);
       setTokenSet(true);
       setPhone(res.user.phone);
       setRole(res.user.role ?? roleFromToken(res.access_token));
+      exitGuest();
       try {
         localStorage.setItem(PHONE_KEY, res.user.phone);
       } catch {
@@ -90,7 +130,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       await loadProfile();
     },
-    [loadProfile],
+    [exitGuest, loadProfile],
+  );
+
+  const login = useCallback(
+    async (ph: string, code: string, claimGuestScanId?: string) => {
+      const res = await authApi.verifyOtp(ph, code, claimGuestScanId);
+      await applySession(res);
+    },
+    [applySession],
+  );
+
+  const passwordLogin = useCallback(
+    async (identifier: string, password: string) => {
+      const id = identifier.trim();
+      const payload = id.includes("@")
+        ? { email: id.toLowerCase(), password }
+        : { phone: id, password };
+      const res = await authApi.loginPassword(payload);
+      await applySession(res);
+    },
+    [applySession],
+  );
+
+  const signup = useCallback(
+    async (payload: { email?: string; phone?: string; password: string; password_confirm: string }) => {
+      const res = await authApi.signup(payload);
+      await applySession(res);
+    },
+    [applySession],
   );
 
   const logout = useCallback(async () => {
@@ -102,13 +170,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole(null);
       setProfile(null);
       setPhone(null);
+      exitGuest();
       try {
         localStorage.removeItem(PHONE_KEY);
       } catch {
         /* ignore */
       }
     }
-  }, []);
+  }, [exitGuest]);
 
   useEffect(() => onAuthExpired(() => logout()), [logout]);
 
@@ -118,7 +187,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     phone,
     profile,
     profileLoading,
+    isGuest: guest && !tokenSet,
+    continueAsGuest,
+    exitGuest,
     login,
+    passwordLogin,
+    signup,
     logout,
     refreshProfile: loadProfile,
   };

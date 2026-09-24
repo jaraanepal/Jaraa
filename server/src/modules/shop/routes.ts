@@ -8,7 +8,7 @@ import { requireAuth, requireRole, type AuthedRequest } from "../../middleware/a
 import { featureEnabled } from "../../middleware/flags";
 import { audit } from "../../lib/audit";
 import { providerFor } from "../../lib/payments";
-import { sendEmail, orderConfirmationEmail } from "../../lib/brevo";
+import { sendEmail, orderConfirmationEmail, orderShippedEmail } from "../../lib/brevo";
 import type { Kit, Product, Order } from "../../db/types";
 
 const ORDER_METHODS = ["esewa", "khalti", "cod"];
@@ -254,6 +254,16 @@ export function shopRoutes(deps: Deps): Router {
       ...(fulfilment_note !== undefined ? { fulfilment_note: String(fulfilment_note).slice(0, 2000) } : {}),
     }))!;
     await audit(store, { actorId: req.user!.id, action: "order.fulfil", entity: "order", entityId: order.id, ip: clientIp(req) });
+    // journey email: order shipped (fire-and-forget — a failed email must never break the request)
+    if (dbStatus === "shipped") {
+      try {
+        const user = await store.getUserById(order.user_id);
+        if (user?.email) {
+          const m = orderShippedEmail(updated.order_no);
+          sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
+        }
+      } catch (e) { console.error("[order-shipped notify]", e); }
+    }
     res.json(toContractOrder(updated));
   }));
 

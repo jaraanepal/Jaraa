@@ -1,12 +1,15 @@
 import { Router } from "express";
 import type { Deps } from "../../deps";
-import { asyncHandler, badRequest, notFound, clientIp } from "../../http";
+import { asyncHandler, badRequest, conflict, notFound, clientIp } from "../../http";
 import { requireRole, type AuthedRequest } from "../../middleware/auth";
 import { invalidateFlagCache } from "../../middleware/flags";
+import { validatePasswordStrength, placeholderPhoneForEmail, EMAIL_RE } from "../../lib/password";
+import { hashPassword } from "../../lib/jwt";
 import { audit } from "../../lib/audit";
 import type { Role } from "../../db/types";
 
 const ROLES: Role[] = ["customer", "doctor", "admin", "pharmacy", "coach"];
+const STAFF_ROLES: Role[] = ["doctor", "pharmacy", "coach"];
 const RULE_ACTIONS = ["next_stage", "raise_flag", "skip_root", "activate_path"];
 
 export function adminRoutes(deps: Deps): Router {
@@ -115,6 +118,30 @@ export function adminRoutes(deps: Deps): Router {
     if (!user) throw notFound("Not found.");
     await audit(store, { actorId: req.user!.id, action: "user.role", entity: "user", entityId: user.id, ip: clientIp(req) });
     res.json({ id: user.id, phone: user.phone, email: user.email, role: user.role });
+  }));
+
+  // POST /admin/staff — create a staff account (doctor/pharmacy/coach only).
+  // Admin-only (r.use(requireRole("admin")) above). Staff sign in at
+  // /{role}/login with email + password — same password rules as everyone.
+  r.post("/staff", asyncHandler(async (req: AuthedRequest, res) => {
+    const { email, password, role } = req.body ?? {};
+    if (!STAFF_ROLES.includes(role)) throw badRequest("Request failed validation.", { field: "role" });
+    if (typeof email !== "string" || !EMAIL_RE.test(email.trim())) {
+      throw badRequest("Request failed validation.", { field: "email" });
+    }
+    const strength = validatePasswordStrength(typeof password === "string" ? password : "");
+    if (!strength.ok) throw badRequest("Password does not meet the strength rules.", { field: "password", errors: strength.errors });
+    const emailNorm = email.trim().toLowerCase();
+    if (await store.getUserByEmail(emailNorm)) throw conflict("A user with this email already exists.");
+    const user = await store.createUser({
+      phone: placeholderPhoneForEmail(emailNorm),
+      email: emailNorm,
+      role: role as Role,
+      passwordHash: await hashPassword(String(password)),
+    });
+    await audit(store, { actorId: req.user!.id, action: "staff.create", entity: "user", entityId: user.id, ip: clientIp(req) });
+    // Never return the password hash.
+    res.status(201).json({ id: user.id, email: user.email, role: user.role, is_active: user.is_active });
   }));
 
   // ---- kit catalog (cosmetic commerce; prescription rows stay inert while flag OFF) ----
