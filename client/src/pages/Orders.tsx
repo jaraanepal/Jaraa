@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { shopApi } from "../api/client";
 import { useLang } from "../i18n/LanguageContext";
-import { ErrorCard, Loading, apiErrorMessage } from "../components/ui";
+import { EmptyState, ErrorCard, Loading, apiErrorMessage } from "../components/ui";
+import { OrderTimeline } from "../components/OrderTimeline";
 import { Icon } from "../components/icons";
 import type { Order } from "../api/types";
 
@@ -31,7 +32,11 @@ export default function Orders() {
     <div className="screen">
       <h1>{t("orders.title")}</h1>
       {error && <ErrorCard message={error} />}
-      {orders.length === 0 && !error && <p className="muted">{t("orders.empty")}</p>}
+      {orders.length === 0 && !error && (
+        <EmptyState icon={<Icon.box size={32} />} title={t("orders.empty")} action={
+          <Link className="btn btn-p" to="/kits" style={{ textDecoration: "none" }}>{t("orders.browseKits")}</Link>
+        } />
+      )}
       {orders.map((o) => (
         <div className="card" key={o.id}>
           <div className="rowflex">
@@ -48,10 +53,11 @@ export default function Orders() {
             <span className="spacer" />
             <span className="chip">{t(`orders.status.${o.status}`)}</span>
           </div>
+          <OrderTimeline status={o.status} />
         </div>
       ))}
       <div className="center">
-        <Link className="linklike" to="/kits">{t("orders.browseKits")}</Link>
+        {orders.length > 0 && <Link className="linklike" to="/kits">{t("orders.browseKits")}</Link>}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { shopApi } from "../api/client";
 import { useLang } from "../i18n/LanguageContext";
-import { ErrorCard, Loading, NoticeBox, apiErrorMessage } from "../components/ui";
+import { EmptyState, ErrorCard, Loading, NoticeBox, StatCard, apiErrorMessage } from "../components/ui";
 import { Icon } from "../components/icons";
 import type { Order, OrderStatus } from "../api/types";
 
@@ -57,7 +57,26 @@ export default function Pharmacy() {
     }
   };
 
+  // Queue = orders that still need action; delivered/cancelled/refunded
+  // are recent history. Empty states say "nothing yet" — never invented rows.
+  const actionable = useMemo(
+    () => orders.filter((o) => ["pending_payment", "paid", "packed", "shipped"].includes(o.status)),
+    [orders],
+  );
+  const history = useMemo(
+    () =>
+      orders
+        .filter((o) => ["delivered", "cancelled", "refunded"].includes(o.status))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 5),
+    [orders],
+  );
+
   if (loading) return <Loading />;
+
+  const count = (s: OrderStatus) => orders.filter((o) => o.status === s).length;
+  const today = new Date().toISOString().slice(0, 10);
+  const todayNew = orders.filter((o) => o.created_at.slice(0, 10) === today).length;
 
   return (
     <div className="screen">
@@ -70,9 +89,21 @@ export default function Pharmacy() {
         </NoticeBox>
       )}
 
-      {orders.length === 0 && !error && <p className="muted">{t("pharmacy.empty")}</p>}
+      {!error && (
+        <div className="statgrid">
+          <StatCard label={t("pharmacy.statAwaiting")} value={String(count("paid"))} icon={<Icon.box size={26} />} />
+          <StatCard label={t("pharmacy.statInTransit")} value={String(count("shipped"))} icon={<Icon.truck size={26} />} />
+          <StatCard label={t("pharmacy.statDelivered")} value={String(count("delivered"))} icon={<Icon.check size={26} />} />
+          <StatCard label={t("pharmacy.statToday")} value={String(todayNew)} icon={<Icon.clock size={26} />} />
+        </div>
+      )}
 
-      {orders.map((o) => {
+      <h3>{t("pharmacy.queueTitle")}</h3>
+      {actionable.length === 0 && !error && (
+        <EmptyState icon={<Icon.truck size={32} />} title={t("pharmacy.empty")} />
+      )}
+
+      {actionable.map((o) => {
         const idx = PIPELINE.indexOf(o.status);
         const step = NEXT[o.status];
         return (
@@ -113,6 +144,27 @@ export default function Pharmacy() {
           </div>
         );
       })}
+
+      {history.length > 0 && (
+        <>
+          <h3>{t("pharmacy.historyTitle")}</h3>
+          {history.map((o) => (
+            <div className="card" key={o.id}>
+              <div className="rowflex">
+                <div>
+                  <b className="kbd">{o.id.slice(0, 8)}</b>
+                  <br />
+                  <span className="tiny muted">
+                    {o.created_at.slice(0, 10)} · {o.payment_method.toUpperCase()} · NPR {o.total_npr}
+                  </span>
+                </div>
+                <span className="spacer" />
+                <span className="chip">{t(`orders.status.${o.status}`)}</span>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }

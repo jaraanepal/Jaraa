@@ -109,6 +109,41 @@ export function Loading() {
   );
 }
 
+/** Dashboard stat card — label + big value, icon optional. Never fake: pass "—" when unknown. */
+export function StatCard({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  return (
+    <div className="statcard">
+      {icon && <span className="staticon" aria-hidden="true">{icon}</span>}
+      <div>
+        <div className="statvalue">{value}</div>
+        <div className="statlabel">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Honest empty state: names what isn't there yet, optionally a CTA. */
+export function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="empty">
+      {icon && <div className="empty-icon" aria-hidden="true">{icon}</div>}
+      <b>{title}</b>
+      {body && <p className="muted tiny">{body}</p>}
+      {action}
+    </div>
+  );
+}
+
 /** Friendly copy for API error codes (bilingual via the errors.* dict). */
 export function apiErrorMessage(t: (k: string) => string, err: unknown): string {
   if (err && typeof err === "object" && "code" in err) {

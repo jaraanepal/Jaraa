@@ -302,18 +302,21 @@ export class MemoryStore implements Store {
     this.products.set(row.id, row);
     return row;
   }
-  async createKit(k: { name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number; is_active?: boolean }) {
+  async createKit(k: { name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number; is_active?: boolean; category?: string | null; images?: string[]; whats_included?: string | null; usage_instructions?: string | null; stock?: number }) {
     const row: Kit = {
       id: randomUUID(), plan_id: null, name_en: k.name_en, name_ne: k.name_ne ?? null,
       product_ids: k.product_ids, total_npr: k.total_npr, is_active: k.is_active ?? true,
-      created_at: now(),
+      category: k.category ?? null, images: k.images ?? [],
+      whats_included: k.whats_included ?? null, usage_instructions: k.usage_instructions ?? null,
+      stock: k.stock ?? 0,
+      created_at: now(), updated_at: now(),
     };
     this.kits.set(row.id, row);
     return row;
   }
   async updateKit(id: string, patch: Partial<Kit>) {
     const k = this.kits.get(id); if (!k) return null;
-    Object.assign(k, patch);
+    Object.assign(k, patch, { updated_at: now() });
     return k;
   }
   async listProducts(opts: { activeOnly: boolean; cosmeticOnly: boolean }) {
@@ -325,6 +328,15 @@ export class MemoryStore implements Store {
     return [...this.kits.values()].filter((k) => !activeOnly || k.is_active);
   }
   async getKit(id: string) { return this.kits.get(id) ?? null; }
+  async listKitsAdmin(opts: { search?: string; category?: string; isActive?: boolean; limit: number; offset: number }) {
+    const q = (opts.search ?? "").trim().toLowerCase();
+    const filtered = [...this.kits.values()]
+      .filter((k) => !q || k.name_en.toLowerCase().includes(q) || (k.name_ne ?? "").toLowerCase().includes(q))
+      .filter((k) => opts.category === undefined || k.category === opts.category)
+      .filter((k) => opts.isActive === undefined || k.is_active === opts.isActive)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { kits: filtered.slice(opts.offset, opts.offset + opts.limit), total: filtered.length };
+  }
 
   // ---- orders ----
   async createOrder(o: { order_no: string; user_id: string; kit_id: string | null; subtotal_npr: number; shipping_npr: number; total_npr: number; payment_method: string; idempotency_key: string; shipping_address: Record<string, unknown> }) {

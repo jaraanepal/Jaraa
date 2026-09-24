@@ -104,7 +104,18 @@ export interface Product {
 }
 export interface Kit {
   id: string; plan_id: string | null; name_ne: string | null; name_en: string;
-  product_ids: string[]; total_npr: number; is_active: boolean; created_at: string;
+  product_ids: string[]; total_npr: number; is_active: boolean;
+  /** Catalogue category slug, e.g. 'hair-oil' (005_kit_details.sql). */
+  category: string | null;
+  /** Public URLs of catalogue images in the public 'kit-images' bucket. */
+  images: string[];
+  /** What's inside the kit. */
+  whats_included: string | null;
+  /** How to use the kit. */
+  usage_instructions: string | null;
+  /** Units on hand; >= 0. */
+  stock: number;
+  created_at: string; updated_at: string;
 }
 
 export interface Order {

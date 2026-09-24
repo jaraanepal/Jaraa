@@ -410,3 +410,90 @@ export interface AuditEntry {
 export interface AuditListResponse {
   entries: AuditEntry[];
 }
+
+export interface AdminUser {
+  id: string;
+  phone: string;
+  email?: string | null;
+  name?: string | null;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[];
+}
+
+/* --------------------------- admin kit management ---
+ * These endpoints are assumed to exist (built by a sibling worker):
+ * POST/GET/PATCH/DELETE /admin/kits (list: ?q=&category=&active=&page=&limit=),
+ * POST /admin/kits/:id/images (multipart), DELETE /admin/kits/:id/images/:imageId.
+ * The UI treats them as optional: a 404 falls back to an honest
+ * "not available yet" state, never invented data.
+ */
+export interface AdminKitImage {
+  id: string;
+  url: string;
+}
+
+export interface AdminKit {
+  id: string;
+  name: string;
+  description?: string | null;
+  price_npr: number;
+  category?: string | null;
+  stock?: number | null;
+  /** What's included in the kit (free-text lines). */
+  included?: string[] | null;
+  usage_instructions?: string | null;
+  is_active: boolean;
+  images?: AdminKitImage[] | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminKitListParams {
+  q?: string;
+  category?: string;
+  active?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+export interface AdminKitListResponse {
+  kits: AdminKit[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface KitUpsertPayload {
+  name: string;
+  description?: string;
+  price_npr: number;
+  category?: string;
+  stock?: number;
+  included?: string[];
+  usage_instructions?: string;
+  is_active: boolean;
+}
+
+/* ---------------------------------- coach --- */
+export interface Nudge {
+  id: string;
+  kind: string;
+  title_en: string;
+  title_ne: string;
+}
+
+/** A customer assigned to this coach. Defensive: the server may 404
+ *  until the assignment feature ships — the UI then says "nothing yet". */
+export interface AssignedCustomer {
+  id: string;
+  name?: string | null;
+  phone?: string | null;
+  plan_status?: string | null;
+  last_checkin_at?: string | null;
+  next_followup_at?: string | null;
+}

@@ -11,6 +11,12 @@ import type {
   AnnotationShape,
   ApiErrorBody,
   Address,
+  AdminKit,
+  AdminKitListParams,
+  AdminKitListResponse,
+  AdminUser,
+  AdminUserListResponse,
+  AssignedCustomer,
   AuditListResponse,
   Case,
   CaseListResponse,
@@ -24,6 +30,8 @@ import type {
   FeatureFlagListResponse,
   FunnelAnalytics,
   KitListResponse,
+  KitUpsertPayload,
+  Nudge,
   Order,
   OrderStatus,
   OtpRequestResponse,
@@ -37,6 +45,7 @@ import type {
   ProgressBundle,
   RedFlag,
   RedFlagType,
+  Role,
   RootMap,
   Scan,
   ScanDetail,
@@ -153,6 +162,36 @@ export async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
 }
 
 const json = (v: unknown) => JSON.stringify(v);
+
+export interface RestoredSession {
+  access_token: string;
+  user: { id: string; phone: string; email?: string | null; role?: Role };
+}
+
+/**
+ * Silent session restore for page refreshes (P10).
+ *
+ * The access JWT lives in memory only, so after a refresh there is none —
+ * the httpOnly `jaraa_rt` refresh cookie (if still valid) is rotated here
+ * to mint a fresh access token. No token is ever copied into localStorage.
+ * Returns the fresh session, or null when there is no valid refresh cookie.
+ * Never throws and never fires the global auth-expired handler: a failed
+ * restore simply means "stay logged out".
+ */
+export async function restoreSession(): Promise<RestoredSession | null> {
+  if (accessToken) return null; // already have one — nothing to restore
+  try {
+    const body = await request<{ access_token?: string; user?: RestoredSession["user"] }>(
+      "/auth/refresh",
+      { method: "POST", noRetry: true },
+    );
+    if (!body?.access_token) return null;
+    setAccessToken(body.access_token);
+    return { access_token: body.access_token, user: body.user ?? { id: "", phone: "" } };
+  } catch {
+    return null;
+  }
+}
 
 /* -------------------------------------------------------- auth --- */
 export const authApi = {
@@ -393,6 +432,59 @@ export const adminApi = {
     q.set("limit", String(params.limit ?? 50));
     return request<AuditListResponse>(`/admin/audit?${q}`);
   },
+  listUsers: () => request<AdminUserListResponse>("/admin/users"),
+  updateUserRole: (id: string, role: Role) =>
+    request<AdminUser>(`/admin/users/${encodeURIComponent(id)}/role`, {
+      method: "PATCH",
+      body: json({ role }),
+    }),
+};
+
+/* ----------------------------------- admin kits ---
+ * Assumed endpoints (sibling worker). Every call may 404 on older
+ * servers — callers must catch ApiError and degrade gracefully. */
+export const adminKitsApi = {
+  list: (p: AdminKitListParams = {}) => {
+    const q = new URLSearchParams();
+    if (p.q) q.set("q", p.q);
+    if (p.category) q.set("category", p.category);
+    if (p.active !== undefined) q.set("active", String(p.active));
+    q.set("page", String(p.page ?? 1));
+    q.set("limit", String(p.limit ?? 20));
+    return request<AdminKitListResponse>(`/admin/kits?${q}`);
+  },
+  get: (id: string) => request<AdminKit>(`/admin/kits/${encodeURIComponent(id)}`),
+  create: (payload: KitUpsertPayload) =>
+    request<AdminKit>("/admin/kits", { method: "POST", body: json(payload) }),
+  update: (id: string, patch: Partial<KitUpsertPayload>) =>
+    request<AdminKit>(`/admin/kits/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: json(patch),
+    }),
+  /** Soft-delete: the server hides the kit; the UI confirms first. */
+  remove: (id: string) => request<void>(`/admin/kits/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  uploadImages: (id: string, files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("images", f, f.name));
+    return request<AdminKit>(`/admin/kits/${encodeURIComponent(id)}/images`, {
+      method: "POST",
+      body: fd,
+    });
+  },
+  deleteImage: (kitId: string, imageId: string) =>
+    request<void>(
+      `/admin/kits/${encodeURIComponent(kitId)}/images/${encodeURIComponent(imageId)}`,
+      { method: "DELETE" },
+    ),
+};
+
+/* ---------------------------------------- coach --- */
+export const coachApi = {
+  /** Customers assigned to this coach. May 404 until the server ships it. */
+  listCustomers: () => request<{ customers: AssignedCustomer[] }>("/coach/customers"),
+  /** Rule-based nudges for one customer (contract: ?user_id required for coach). */
+  getNudges: (userId: string) =>
+    request<{ nudges: Nudge[] }>(`/coach/nudges?user_id=${encodeURIComponent(userId)}`),
 };
 
 export type { RedFlagType, Address };

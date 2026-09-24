@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { authApi, meApi, onAuthExpired, setAccessToken } from "../api/client";
+import { authApi, meApi, onAuthExpired, restoreSession, setAccessToken } from "../api/client";
 import type { Profile, Role } from "../api/types";
 
 interface AuthState {
@@ -20,6 +20,11 @@ interface AuthState {
   signup: (payload: { email?: string; phone?: string; password: string; password_confirm: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<Profile | null>;
+  /**
+   * True once the one-shot silent session restore on app load has finished.
+   * Guards wait on this so a restored session never flashes a login page.
+   */
+  authReady: boolean;
 }
 
 const Ctx = createContext<AuthState>({
@@ -36,6 +41,7 @@ const Ctx = createContext<AuthState>({
   signup: async () => {},
   logout: async () => {},
   refreshProfile: async () => null,
+  authReady: false,
 });
 
 const PHONE_KEY = "jaraa:phone";
@@ -53,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [guest, setGuest] = useState<boolean>(() => {
     try {
       return localStorage.getItem(GUEST_KEY) === "1";
@@ -181,6 +188,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => onAuthExpired(() => logout()), [logout]);
 
+  /**
+   * P10 — session survives page refresh. On app load, try one silent
+   * restore via the httpOnly refresh cookie. Success re-establishes the
+   * access token, role (server user row, else the JWT claim), phone, and
+   * profile with no login flash; failure (expired/invalid cookie) leaves
+   * the user logged out. Only an explicit logout() clears a live session.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await restoreSession();
+        if (cancelled || !s) return;
+        const validRoles = ["customer", "doctor", "admin", "pharmacy", "coach"] as Role[];
+        const r = s.user.role ?? roleFromToken(s.access_token);
+        setAccessToken(s.access_token);
+        setTokenSet(true);
+        setRole(validRoles.includes(r) ? r : "customer");
+        if (s.user.phone) {
+          setPhone(s.user.phone);
+          try {
+            localStorage.setItem(PHONE_KEY, s.user.phone);
+          } catch {
+            /* ignore */
+          }
+        }
+        await loadProfile();
+      } catch {
+        /* graceful: stay logged out */
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProfile]);
+
   const value: AuthState = {
     isAuthed: tokenSet,
     role,
@@ -195,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signup,
     logout,
     refreshProfile: loadProfile,
+    authReady,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

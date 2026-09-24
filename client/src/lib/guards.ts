@@ -61,6 +61,26 @@ export function loginPathFor(path: string): string {
   return "/login";
 }
 
+/**
+ * Home dashboard for each role — the [Go back] target on the
+ * role-mismatch screen (P11). Pure, unit-tested.
+ */
+export function dashboardPathFor(role: Role): string {
+  switch (role) {
+    case "doctor":
+      return "/doctor";
+    case "admin":
+      return "/admin";
+    case "pharmacy":
+      return "/pharmacy";
+    case "coach":
+      return "/coach";
+    case "customer":
+    default:
+      return "/";
+  }
+}
+
 export function matchRule(path: string): RouteRule | null {
   // Longest-prefix match so /scan/:id and /doctor/case/:id resolve.
   const keys = Object.keys(ROUTE_RULES).sort((a, b) => b.length - a.length);

@@ -66,12 +66,20 @@ export interface Store {
   approvePlan(id: string, approverId: string): Promise<{ plan: Plan | null; reason?: string }>;
   // catalog
   createProduct(p: { name_en: string; name_ne?: string | null; kind: "cosmetic" | "prescription"; price_npr: number; image_url?: string | null; is_active?: boolean }): Promise<Product>;
-  createKit(k: { name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number; is_active?: boolean }): Promise<Kit>;
+  createKit(k: {
+    name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number;
+    is_active?: boolean; category?: string | null; images?: string[];
+    whats_included?: string | null; usage_instructions?: string | null; stock?: number;
+  }): Promise<Kit>;
   listProducts(opts: { activeOnly: boolean; cosmeticOnly: boolean }): Promise<Product[]>;
   getProduct(id: string): Promise<Product | null>;
   listKits(activeOnly: boolean): Promise<Kit[]>;
   getKit(id: string): Promise<Kit | null>;
   updateKit(id: string, patch: Partial<Kit>): Promise<Kit | null>;
+  /** Admin kit list: search + filters + pagination. Ordered newest-first. */
+  listKitsAdmin(opts: {
+    search?: string; category?: string; isActive?: boolean; limit: number; offset: number;
+  }): Promise<{ kits: Kit[]; total: number }>;
   // orders
   createOrder(o: { order_no: string; user_id: string; kit_id: string | null; subtotal_npr: number; shipping_npr: number; total_npr: number; payment_method: string; idempotency_key: string; shipping_address: Record<string, unknown> }): Promise<Order>;
   getOrder(id: string): Promise<Order | null>;

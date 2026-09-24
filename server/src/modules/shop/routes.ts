@@ -60,6 +60,9 @@ export function shopRoutes(deps: Deps): Router {
       out.push({
         id: kit.id, name: kit.name_en, description: kit.name_ne,
         total_npr: kit.total_npr, is_active: kit.is_active,
+        category: kit.category, images: kit.images,
+        whats_included: kit.whats_included, usage_instructions: kit.usage_instructions,
+        stock: kit.stock,
         products: kitProducts.map(toContractProduct),
       });
     }
@@ -89,6 +92,9 @@ export function shopRoutes(deps: Deps): Router {
     res.json({
       id: kit.id, name: kit.name_en, description: kit.name_ne,
       total_npr: kit.total_npr, is_active: kit.is_active,
+      category: kit.category, images: kit.images,
+      whats_included: kit.whats_included, usage_instructions: kit.usage_instructions,
+      stock: kit.stock,
       products: kitProducts.map(toContractProduct),
     });
   }));

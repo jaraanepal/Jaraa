@@ -3,7 +3,6 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { useLang } from "../i18n/LanguageContext";
 import { useAuth } from "../auth/AuthContext";
 import { useFlags } from "../auth/FlagsContext";
-import type { Role } from "../api/types";
 import { Icon } from "./icons";
 import { Modal, ToastHost } from "./ui";
 
@@ -117,23 +116,34 @@ function BottomNav() {
 }
 
 /**
- * Left slide-in sidebar drawer — everything NOT in the bottom nav:
- * Scan, Plan, Orders, Teleconsult, role-gated staff consoles, Settings.
- * (Problem 2: the drawer is the only home for these links.)
+ * Role-aware left sidebar drawer (Problem 2):
+ * - customers: Scan, My Plan, Orders, Video consult, Settings (v3 behavior)
+ * - admin: dashboard, kits, orders, staff/users, flags, audit
+ * - doctor: review queue, reviewed plans, profile
+ * - pharmacy: fulfilment queue, profile
+ * - coach: my customers, follow-ups, profile
+ * Every drawer ends with Settings (language) + a two-step Log out.
  */
 function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useLang();
-  const { role } = useAuth();
+  const { role, logout } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const closeRef = useRef<HTMLButtonElement>(null);
   const asideRef = useRef<HTMLElement>(null);
   const openBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   // Close on navigation.
   useEffect(() => {
     if (open) onClose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
+
+  // Reset the logout confirm whenever the drawer opens.
+  useEffect(() => {
+    if (open) setConfirmingLogout(false);
+  }, [open ]);
 
   // Keep the closed drawer out of the tab order (React 18 types lack `inert`).
   useEffect(() => {
@@ -161,18 +171,48 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
     };
   }, [open, onClose]);
 
-  const main: NavItem[] = [
-    { to: "/scan", key: "nav.scan", icon: Icon.scan },
-    { to: "/plan", key: "nav.plan", icon: Icon.plan },
-    { to: "/orders", key: "nav.orders", icon: Icon.truck },
-    { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
-  ];
-  const staff: Array<{ role: Role; to: string; key: string; icon: NavItem["icon"] }> = [
-    { role: "doctor", to: "/doctor", key: "nav.doctor", icon: Icon.doc },
-    { role: "admin", to: "/admin", key: "nav.admin", icon: Icon.gear },
-    { role: "pharmacy", to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck },
-    { role: "coach", to: "/coach", key: "nav.coach", icon: Icon.book },
-  ];
+  const links: NavItem[] =
+    role === "admin"
+      ? [
+          { to: "/admin", key: "nav.admin", icon: Icon.gear, end: true },
+          { to: "/admin/kits", key: "adminKits.title", icon: Icon.box },
+          { to: "/admin/orders", key: "drawer.orders", icon: Icon.truck },
+          { to: "/admin/users?view=staff", key: "drawer.staff", icon: Icon.user },
+          { to: "/admin/users", key: "drawer.users", icon: Icon.user },
+          { to: "/admin/flags", key: "admin.flagsTitle", icon: Icon.alert },
+          { to: "/admin/audit", key: "admin.auditTitle", icon: Icon.doc },
+          { to: "/admin/profile", key: "nav.profile", icon: Icon.user },
+        ]
+      : role === "doctor"
+        ? [
+            { to: "/doctor", key: "nav.doctor", icon: Icon.doc, end: true },
+            { to: "/doctor/reviewed", key: "doctorDash.reviewedTab", icon: Icon.check },
+            { to: "/doctor/profile", key: "nav.profile", icon: Icon.user },
+          ]
+        : role === "pharmacy"
+          ? [
+              { to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck, end: true },
+              { to: "/pharmacy/profile", key: "nav.profile", icon: Icon.user },
+            ]
+          : role === "coach"
+            ? [
+                { to: "/coach", key: "nav.coach", icon: Icon.book, end: true },
+                { to: "/coach/followups", key: "coachDash.followups", icon: Icon.chat },
+                { to: "/coach/profile", key: "nav.profile", icon: Icon.user },
+              ]
+            : [
+                { to: "/scan", key: "nav.scan", icon: Icon.scan },
+                { to: "/plan", key: "nav.plan", icon: Icon.plan },
+                { to: "/orders", key: "nav.orders", icon: Icon.truck },
+                { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
+              ];
+
+  async function doLogout() {
+    setConfirmingLogout(false);
+    onClose();
+    await logout();
+    navigate("/", { replace: true });
+  }
 
   return (
     <div className={`drawerroot${open ? " open" : ""}`} aria-hidden={open ? undefined : "true"}>
@@ -191,27 +231,49 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
           </button>
         </div>
         <nav aria-label={t("nav.menu")}>
-          {main.map((i) => (
-            <NavLink key={i.to} to={i.to} onClick={onClose} className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}>
+          {links.map((i) => (
+            <NavLink
+              key={i.to}
+              to={i.to}
+              end={i.end}
+              onClick={onClose}
+              className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}
+            >
               {i.icon({ size: 20 })}
               <span>{t(i.key)}</span>
             </NavLink>
           ))}
-          {staff
-            .filter((s) => s.role === role)
-            .map((s) => (
-              <NavLink key={s.to} to={s.to} onClick={onClose} className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}>
-                {s.icon({ size: 20 })}
-                <span>{t(s.key)}</span>
-              </NavLink>
-            ))}
         </nav>
-        <div className="drawer-settings">
-          <h3>{t("nav.settings")}</h3>
-          <div className="rowflex">
-            <span className="muted">{t("common.language")}</span>
-            <span className="spacer" />
-            <LanguageToggle />
+        <div className="drawer-foot">
+          <div className="drawer-settings">
+            <h3>{t("nav.settings")}</h3>
+            <div className="rowflex">
+              <span className="muted">{t("common.language")}</span>
+              <span className="spacer" />
+              <LanguageToggle />
+            </div>
+          </div>
+          <div className="drawer-logout">
+            {confirmingLogout ? (
+              <div>
+                <p className="tiny" style={{ margin: "4px 0 8px" }}>
+                  <b>{t("drawer.logoutConfirm")}</b>
+                </p>
+                <div className="btn-row">
+                  <button className="btn btn-p" onClick={doLogout}>
+                    {t("drawer.logoutYes")}
+                  </button>
+                  <button className="btn btn-g" onClick={() => setConfirmingLogout(false)}>
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="drawer-link drawer-logout-btn" onClick={() => setConfirmingLogout(true)}>
+                <Icon.logout size={20} />
+                <span>{t("common.signOut")}</span>
+              </button>
+            )}
           </div>
         </div>
       </aside>

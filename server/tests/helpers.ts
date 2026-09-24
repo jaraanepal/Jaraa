@@ -3,7 +3,7 @@ import { buildApp } from "../src/app";
 import { MemoryStore } from "../src/db/memory";
 import { OtpService } from "../src/lib/otp";
 import { LogSmsProvider } from "../src/lib/sms";
-import { memoryStorage } from "../src/lib/photos";
+import { memoryStorage, memoryPublicStorage } from "../src/lib/photos";
 import { ChunkAssembler } from "../src/lib/chunks";
 import { signAccess } from "../src/lib/jwt";
 import type { Deps } from "../src/deps";
@@ -19,6 +19,7 @@ export function testDeps() {
     sms: new LogSmsProvider(),
     storage: memoryStorage(),
     profileStorage: memoryStorage(),
+    kitStorage: memoryPublicStorage(),
     chunks: new ChunkAssembler(),
     jwtSecret: JWT_SECRET,
     secureCookies: false,

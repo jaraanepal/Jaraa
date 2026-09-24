@@ -14,7 +14,8 @@ const Signup = lazy(() => import("./pages/Signup"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const StaffLogin = lazy(() => import("./pages/StaffLogin"));
-const Profile = lazy(() => import("./pages/Profile"));
+const ProfileShell = lazy(() => import("./pages/ProfileShell"));
+const StaffProfile = lazy(() => import("./pages/staff/StaffProfile"));
 const ScanShell = lazy(() => import("./pages/scan/ScanShell"));
 const RootMap = lazy(() => import("./pages/scan/RootMap"));
 const SubmitScan = lazy(() => import("./pages/scan/SubmitScan"));
@@ -23,11 +24,17 @@ const Progress = lazy(() => import("./pages/Progress"));
 const Kits = lazy(() => import("./pages/Kits"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Teleconsult = lazy(() => import("./pages/Teleconsult"));
-const DoctorQueue = lazy(() => import("./pages/doctor/DoctorQueue"));
+const DoctorDashboard = lazy(() => import("./pages/doctor/DoctorDashboard"));
 const DoctorCase = lazy(() => import("./pages/doctor/DoctorCase"));
 const Admin = lazy(() => import("./pages/Admin"));
+const AdminKits = lazy(() => import("./pages/admin/AdminKits"));
+const AdminOrders = lazy(() => import("./pages/admin/AdminOrders"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminFlags = lazy(() => import("./pages/admin/AdminFlags"));
+const AdminAudit = lazy(() => import("./pages/admin/AdminAudit"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy"));
 const Coach = lazy(() => import("./pages/Coach"));
+const CoachFollowups = lazy(() => import("./pages/Coach").then((m) => ({ default: m.CoachFollowups })));
 
 /**
  * Bare /scan entry: resumes the local draft scan, or sends the customer
@@ -65,7 +72,8 @@ export default function App() {
                   <Route path="/pharmacy/login" element={<StaffLogin role="pharmacy" />} />
                   <Route path="/coach/login" element={<StaffLogin role="coach" />} />
 
-                  <Route path="/profile" element={<Guard><Profile /></Guard>} />
+                  {/* Role-aware: customers get the full profile, staff get theirs */}
+                  <Route path="/profile" element={<Guard><ProfileShell /></Guard>} />
 
                   {/* Customer */}
                   <Route path="/" element={<Guard><Home /></Guard>} />
@@ -80,11 +88,22 @@ export default function App() {
                   <Route path="/teleconsult" element={<Guard><Teleconsult /></Guard>} />
 
                   {/* Role consoles */}
-                  <Route path="/doctor" element={<Guard><DoctorQueue /></Guard>} />
+                  <Route path="/doctor" element={<Guard><DoctorDashboard /></Guard>} />
+                  <Route path="/doctor/reviewed" element={<Guard><DoctorDashboard initialTab="reviewed" /></Guard>} />
+                  <Route path="/doctor/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/doctor/case/:id" element={<Guard><DoctorCase /></Guard>} />
                   <Route path="/admin" element={<Guard><Admin /></Guard>} />
+                  <Route path="/admin/kits" element={<Guard><AdminKits /></Guard>} />
+                  <Route path="/admin/orders" element={<Guard><AdminOrders /></Guard>} />
+                  <Route path="/admin/users" element={<Guard><AdminUsers /></Guard>} />
+                  <Route path="/admin/flags" element={<Guard><AdminFlags /></Guard>} />
+                  <Route path="/admin/audit" element={<Guard><AdminAudit /></Guard>} />
+                  <Route path="/admin/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/pharmacy" element={<Guard><Pharmacy /></Guard>} />
+                  <Route path="/pharmacy/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/coach" element={<Guard><Coach /></Guard>} />
+                  <Route path="/coach/followups" element={<Guard><CoachFollowups /></Guard>} />
+                  <Route path="/coach/profile" element={<Guard><StaffProfile /></Guard>} />
 
                   {/* Errors */}
                   <Route path="/403" element={<ForbiddenPage />} />

@@ -1,8 +1,10 @@
 import { Router } from "express";
+import multer from "multer";
 import type { Deps } from "../../deps";
 import { asyncHandler, badRequest, conflict, notFound, clientIp } from "../../http";
 import { requireRole, type AuthedRequest } from "../../middleware/auth";
 import { invalidateFlagCache } from "../../middleware/flags";
+import { MAX_BYTES, processKitImage, PhotoError, pathFromPublicUrl } from "../../lib/photos";
 import { validatePasswordStrength, placeholderPhoneForEmail, EMAIL_RE } from "../../lib/password";
 import { hashPassword } from "../../lib/jwt";
 import { audit } from "../../lib/audit";
@@ -145,10 +147,39 @@ export function adminRoutes(deps: Deps): Router {
   }));
 
   // ---- kit catalog (cosmetic commerce; prescription rows stay inert while flag OFF) ----
+  // DELETE /admin/kits/:id is a SOFT delete (is_active=false): orders already
+  // placed against the kit stay resolvable, and the public catalogue simply
+  // stops listing it. There is no hard-delete endpoint.
   const toContractKit = (k: import("../../db/types").Kit) => ({
-    id: k.id, name_en: k.name_en, name_ne: k.name_ne, product_ids: k.product_ids,
-    total_npr: k.total_npr, is_active: k.is_active, created_at: k.created_at,
+    id: k.id, plan_id: k.plan_id, name_en: k.name_en, name_ne: k.name_ne,
+    product_ids: k.product_ids, total_npr: k.total_npr,
+    category: k.category, images: k.images,
+    whats_included: k.whats_included, usage_instructions: k.usage_instructions,
+    stock: k.stock,
+    is_active: k.is_active, created_at: k.created_at, updated_at: k.updated_at,
   });
+
+  const kitUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_BYTES },
+  });
+
+  function validText(v: unknown, max = 5000): v is string {
+    return typeof v === "string" && v.trim().length > 0 && v.length <= max;
+  }
+  function validInt(v: unknown): v is number {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 0;
+  }
+
+  async function validateKitProductIds(product_ids: unknown): Promise<string[]> {
+    if (product_ids === undefined || product_ids === null) return [];
+    if (!Array.isArray(product_ids)) throw badRequest("Request failed validation.", { field: "product_ids" });
+    for (const pid of product_ids) {
+      if (!(await store.getProduct(String(pid)))) throw badRequest("Unknown product.", { field: "product_ids" });
+    }
+    return product_ids.map(String);
+  }
 
   // POST /admin/products
   r.post("/products", asyncHandler(async (req: AuthedRequest, res) => {
@@ -164,33 +195,142 @@ export function adminRoutes(deps: Deps): Router {
 
   // POST /admin/kits
   r.post("/kits", asyncHandler(async (req: AuthedRequest, res) => {
-    const { name_en, name_ne, product_ids, total_npr } = req.body ?? {};
-    if (!name_en || typeof name_en !== "string") throw badRequest("Request failed validation.", { field: "name_en" });
-    if (!Array.isArray(product_ids) || product_ids.length === 0) throw badRequest("Request failed validation.", { field: "product_ids" });
-    for (const pid of product_ids) {
-      if (!(await store.getProduct(String(pid)))) throw badRequest("Unknown product.", { field: "product_ids" });
-    }
-    const total = Number(total_npr);
-    if (!Number.isInteger(total) || total < 0) throw badRequest("Request failed validation.", { field: "total_npr" });
-    const k = await store.createKit({ name_en, name_ne: name_ne ?? null, product_ids: product_ids.map(String), total_npr: total });
+    const { name_en, name_ne, product_ids, total_npr, price_npr, category, images, whats_included, usage_instructions, stock } = req.body ?? {};
+    if (!validText(name_en, 200)) throw badRequest("Request failed validation.", { field: "name_en" });
+    // price: total_npr is the canonical contract field; price_npr accepted as an alias.
+    const priceRaw = total_npr !== undefined ? total_npr : price_npr;
+    if (!validInt(priceRaw)) throw badRequest("Request failed validation.", { field: "total_npr" });
+    if (stock !== undefined && !validInt(stock)) throw badRequest("Request failed validation.", { field: "stock" });
+    if (category !== undefined && category !== null && typeof category !== "string")
+      throw badRequest("Request failed validation.", { field: "category" });
+    if (images !== undefined && (!Array.isArray(images) || !images.every((u) => typeof u === "string")))
+      throw badRequest("Request failed validation.", { field: "images" });
+    const ids = await validateKitProductIds(product_ids);
+    const k = await store.createKit({
+      name_en: name_en.trim(), name_ne: name_ne ?? null, product_ids: ids, total_npr: Number(priceRaw),
+      category: category ? String(category).slice(0, 100) : null,
+      images: images ?? [],
+      whats_included: whats_included ?? null, usage_instructions: usage_instructions ?? null,
+      stock: stock === undefined ? 0 : Number(stock),
+    });
     await audit(store, { actorId: req.user!.id, action: "kit.create", entity: "kit", entityId: k.id, ip: clientIp(req) });
     res.status(201).json(toContractKit(k));
   }));
 
-  // PATCH /admin/kits/:id — activate/deactivate, reprice
+  // GET /admin/kits — list with search/filter/pagination (admin sees inactive too)
+  r.get("/kits", asyncHandler(async (req, res) => {
+    const q = req.query;
+    const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 100);
+    const offset = Math.max(Number(q.offset) || 0, 0);
+    const isActive = q.is_active === undefined ? undefined : q.is_active === "true";
+    const { kits, total } = await store.listKitsAdmin({
+      search: typeof q.search === "string" ? q.search : undefined,
+      category: typeof q.category === "string" ? q.category : undefined,
+      isActive, limit, offset,
+    });
+    res.json({ kits: kits.map(toContractKit), total, limit, offset });
+  }));
+
+  // GET /admin/kits/:id — full detail (admin sees inactive too)
+  r.get("/kits/:id", asyncHandler(async (req, res) => {
+    const k = await store.getKit(req.params.id);
+    if (!k) throw notFound("Not found.");
+    res.json(toContractKit(k));
+  }));
+
+  // PATCH /admin/kits/:id — edit any catalogue field
   r.patch("/kits/:id", asyncHandler(async (req: AuthedRequest, res) => {
-    const { is_active, total_npr } = req.body ?? {};
+    const { name_en, name_ne, product_ids, total_npr, price_npr, category, images, whats_included, usage_instructions, stock, is_active } = req.body ?? {};
     const patch: Partial<import("../../db/types").Kit> = {};
-    if (is_active !== undefined) patch.is_active = Boolean(is_active);
-    if (total_npr !== undefined) {
-      const total = Number(total_npr);
-      if (!Number.isInteger(total) || total < 0) throw badRequest("Request failed validation.", { field: "total_npr" });
-      patch.total_npr = total;
+    if (name_en !== undefined) {
+      if (!validText(name_en, 200)) throw badRequest("Request failed validation.", { field: "name_en" });
+      patch.name_en = name_en.trim();
     }
+    if (name_ne !== undefined) patch.name_ne = name_ne === null ? null : String(name_ne);
+    if (product_ids !== undefined) patch.product_ids = await validateKitProductIds(product_ids);
+    const priceRaw = total_npr !== undefined ? total_npr : price_npr;
+    if (priceRaw !== undefined) {
+      if (!validInt(priceRaw)) throw badRequest("Request failed validation.", { field: "total_npr" });
+      patch.total_npr = Number(priceRaw);
+    }
+    if (category !== undefined) {
+      if (category !== null && typeof category !== "string")
+        throw badRequest("Request failed validation.", { field: "category" });
+      patch.category = category ? String(category).slice(0, 100) : null;
+    }
+    if (images !== undefined) {
+      if (!Array.isArray(images) || !images.every((u) => typeof u === "string"))
+        throw badRequest("Request failed validation.", { field: "images" });
+      patch.images = images;
+    }
+    if (whats_included !== undefined) patch.whats_included = whats_included === null ? null : String(whats_included);
+    if (usage_instructions !== undefined) patch.usage_instructions = usage_instructions === null ? null : String(usage_instructions);
+    if (stock !== undefined) {
+      if (!validInt(stock)) throw badRequest("Request failed validation.", { field: "stock" });
+      patch.stock = Number(stock);
+    }
+    if (is_active !== undefined) patch.is_active = Boolean(is_active);
     const k = await store.updateKit(req.params.id, patch);
     if (!k) throw notFound("Not found.");
     await audit(store, { actorId: req.user!.id, action: "kit.update", entity: "kit", entityId: k.id, ip: clientIp(req) });
     res.json(toContractKit(k));
+  }));
+
+  // DELETE /admin/kits/:id — SOFT delete (sets is_active=false)
+  r.delete("/kits/:id", asyncHandler(async (req: AuthedRequest, res) => {
+    const k = await store.updateKit(req.params.id, { is_active: false });
+    if (!k) throw notFound("Not found.");
+    await audit(store, { actorId: req.user!.id, action: "kit.delete", entity: "kit", entityId: k.id, ip: clientIp(req) });
+    res.json(toContractKit(k));
+  }));
+
+  // POST /admin/kits/:id/images — multipart kit image upload (field "image")
+  r.post("/kits/:id/images", kitUpload.single("image"), asyncHandler(async (req: AuthedRequest, res) => {
+    const kit = await store.getKit(req.params.id);
+    if (!kit) throw notFound("Not found.");
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) throw badRequest("Request failed validation.", { field: "image" });
+    try {
+      const out = await processKitImage(deps.kitStorage, {
+        kitId: kit.id, bytes: file.buffer, filename: file.originalname,
+      });
+      const updated = (await store.updateKit(kit.id, { images: [...kit.images, out.imageUrl] }))!;
+      await audit(store, {
+        actorId: req.user!.id, action: "kit.image.add", entity: "kit", entityId: kit.id,
+        ip: clientIp(req),
+      });
+      res.status(201).json({
+        image_url: out.imageUrl, thumb_url: out.thumbUrl,
+        width: out.width, height: out.height,
+        images: updated.images,
+      });
+    } catch (e) {
+      if (e instanceof PhotoError) {
+        const code = e.status === 413 ? 413 : e.status === 415 ? 400 : 422;
+        res.status(code).json({ code: "validation_error", message: e.message });
+        return;
+      }
+      throw e;
+    }
+  }));
+
+  // DELETE /admin/kits/:id/images — remove one image (storage + kit.images[])
+  r.delete("/kits/:id/images", asyncHandler(async (req: AuthedRequest, res) => {
+    const kit = await store.getKit(req.params.id);
+    if (!kit) throw notFound("Not found.");
+    const { image_url } = req.body ?? {};
+    if (typeof image_url !== "string" || !kit.images.includes(image_url))
+      throw badRequest("Request failed validation.", { field: "image_url" });
+    const path = pathFromPublicUrl("kit-images", image_url);
+    // remove the file + its thumbnail; storage errors must not fail the request
+    try { await deps.kitStorage.delete(path); } catch (e) { console.error("[kit-image delete]", e); }
+    try { await deps.kitStorage.delete(path.replace(/\.jpg$/, "-thumb.jpg")); } catch (e) { console.error("[kit-image delete]", e); }
+    const updated = (await store.updateKit(kit.id, { images: kit.images.filter((u) => u !== image_url) }))!;
+    await audit(store, {
+      actorId: req.user!.id, action: "kit.image.remove", entity: "kit", entityId: kit.id,
+      ip: clientIp(req),
+    });
+    res.json({ removed: image_url, images: updated.images });
   }));
 
   return r;

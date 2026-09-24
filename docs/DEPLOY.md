@@ -17,6 +17,7 @@ operational setup, so the same runbook applies.
    - `db/migrations/002_app.sql` (guest scans, staff password auth, refresh tokens, deletion requests)
    - `db/migrations/003_profile_extras.sql` (profiles.photo_path + addresses JSON, private `profile-photos` bucket)
    - `db/migrations/004_password_resets.sql` (single-use password-reset tokens, HMAC-hashed)
+   - `db/migrations/005_kit_details.sql` (kit category/images/whats-included/usage/stock/is_active, public `kit-images` bucket)
    This creates all tables, RLS policies, the private `scan-photos` storage bucket,
    feature-flag seeds (`teleconsult_booking` OFF, `prescription_commerce` OFF) and the
    `scan_rules` seeds.

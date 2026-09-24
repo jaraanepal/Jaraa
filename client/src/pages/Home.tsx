@@ -86,11 +86,11 @@ export default function Home() {
       </div>
 
       {resumable ? (
-        <button className="btn btn-p" onClick={() => navigate(`/scan/${draft.scanId}`)}>
+        <button className="btn btn-p home-cta" onClick={() => navigate(`/scan/${draft.scanId}`)}>
           {t("home.resumeScan")} — {t("home.resumeAt", { stage: t(STAGE_KEYS[["kahani", "lens", "jara", "root_map"].indexOf(draft.stage)] ?? "home.stage1") })}
         </button>
       ) : (
-        <button className="btn btn-p" onClick={startScan} disabled={starting || !flags.root_scan}>
+        <button className="btn btn-p home-cta" onClick={startScan} disabled={starting || !flags.root_scan}>
           {starting ? t("common.loading") : t("home.startScan")}
         </button>
       )}

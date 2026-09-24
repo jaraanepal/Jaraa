@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAccess, loginPathFor, matchRule } from "../lib/guards";
+import { checkAccess, dashboardPathFor, loginPathFor, matchRule } from "../lib/guards";
 import type { GuardState } from "../lib/guards";
 import type { Role } from "../api/types";
 
@@ -119,5 +119,30 @@ describe("guest mode (P6)", () => {
     expect(checkAccess(anon, "/admin", true)).toBe("login");
     expect(checkAccess(anon, "/plan", true)).toBe("login");
     expect(checkAccess(anon, "/orders", true)).toBe("login");
+  });
+});
+
+describe("role-mismatch dashboard targets (P11)", () => {
+  it("maps every role to its own dashboard for [Go back]", () => {
+    expect(dashboardPathFor("customer")).toBe("/");
+    expect(dashboardPathFor("doctor")).toBe("/doctor");
+    expect(dashboardPathFor("admin")).toBe("/admin");
+    expect(dashboardPathFor("pharmacy")).toBe("/pharmacy");
+    expect(dashboardPathFor("coach")).toBe("/coach");
+  });
+
+  it("every dashboard is reachable by its own role", () => {
+    const roles: Role[] = ["customer", "doctor", "admin", "pharmacy", "coach"];
+    for (const role of roles) {
+      expect(checkAccess(cust(role), dashboardPathFor(role)), `role ${role}`).toBe("allow");
+    }
+  });
+
+  it("a logged-in user on another role's console is forbidden (mismatch screen)", () => {
+    // Guard renders RoleMismatchPage for these instead of redirecting.
+    expect(checkAccess(cust(), "/admin")).toBe("forbidden");
+    expect(checkAccess(cust("admin"), "/")).toBe("forbidden");
+    expect(checkAccess(cust("doctor"), "/pharmacy")).toBe("forbidden");
+    expect(checkAccess(cust("pharmacy"), "/coach")).toBe("forbidden");
   });
 });

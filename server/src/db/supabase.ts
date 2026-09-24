@@ -329,10 +329,13 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     return data;
   }
-  async createKit(k: { name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number; is_active?: boolean }) {
+  async createKit(k: { name_en: string; name_ne?: string | null; product_ids: string[]; total_npr: number; is_active?: boolean; category?: string | null; images?: string[]; whats_included?: string | null; usage_instructions?: string | null; stock?: number }) {
     const { data, error } = await this.sb.from("kits").insert({
       name_en: k.name_en, name_ne: k.name_ne ?? null, product_ids: k.product_ids,
       total_npr: k.total_npr, is_active: k.is_active ?? true,
+      category: k.category ?? null, images: k.images ?? [],
+      whats_included: k.whats_included ?? null, usage_instructions: k.usage_instructions ?? null,
+      stock: k.stock ?? 0,
     }).select().single();
     if (error) throw error;
     return data;
@@ -355,6 +358,17 @@ export class SupabaseStore implements Store {
     const { data, error } = await q;
     if (error) throw error;
     return data;
+  }
+  async listKitsAdmin(opts: { search?: string; category?: string; isActive?: boolean; limit: number; offset: number }) {
+    let q = this.sb.from("kits").select("*", { count: "exact" });
+    const search = (opts.search ?? "").trim().replace(/[%_]/g, "");
+    if (search) q = q.or(`name_en.ilike.%${search}%,name_ne.ilike.%${search}%`);
+    if (opts.category !== undefined) q = q.eq("category", opts.category);
+    if (opts.isActive !== undefined) q = q.eq("is_active", opts.isActive);
+    q = q.order("created_at", { ascending: false }).range(opts.offset, opts.offset + opts.limit - 1);
+    const { data, error, count } = await q;
+    if (error) throw error;
+    return { kits: data ?? [], total: count ?? 0 };
   }
   async getKit(id: string) {
     const { data } = await this.sb.from("kits").select("*").eq("id", id).maybeSingle();

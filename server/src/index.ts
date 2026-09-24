@@ -7,7 +7,7 @@ import { MemoryStore } from "./db/memory";
 import { SupabaseStore } from "./db/supabase";
 import { OtpService } from "./lib/otp";
 import { buildSmsProvider } from "./lib/sms";
-import { memoryStorage, supabaseStorage, profilePhotosStorage } from "./lib/photos";
+import { memoryStorage, supabaseStorage, profilePhotosStorage, memoryPublicStorage, supabasePublicStorage } from "./lib/photos";
 import { ChunkAssembler } from "./lib/chunks";
 import { hashPassword } from "./lib/jwt";
 import type { Deps } from "./deps";
@@ -39,6 +39,7 @@ async function main() {
   let store: MemoryStore | SupabaseStore;
   let storage: ReturnType<typeof memoryStorage> | ReturnType<typeof supabaseStorage>;
   let profileStorage: ReturnType<typeof memoryStorage> | ReturnType<typeof profilePhotosStorage>;
+  let kitStorage: ReturnType<typeof memoryPublicStorage> | ReturnType<typeof supabasePublicStorage>;
 
   if (env.hasSupabase) {
     const sb = new SupabaseStore(env.supabaseUrl, env.supabaseServiceKey);
@@ -47,12 +48,14 @@ async function main() {
     store = sb;
     storage = supabaseStorage({ storage: sb.storage() });
     profileStorage = profilePhotosStorage({ storage: sb.storage() });
+    kitStorage = supabasePublicStorage({ storage: sb.storage() }, "kit-images");
     console.log("[boot] using Supabase store");
   } else {
     console.warn("[boot] SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set — in-memory store (dev/test only)");
     store = new MemoryStore();
     storage = memoryStorage();
     profileStorage = memoryStorage();
+    kitStorage = memoryPublicStorage();
   }
 
   const deps: Deps = {
@@ -61,6 +64,7 @@ async function main() {
     sms,
     storage,
     profileStorage,
+    kitStorage,
     chunks: new ChunkAssembler(),
     jwtSecret: env.jwtSecret,
     secureCookies: (process.env.COOKIE_SECURE ?? "true").toLowerCase() === "true",
