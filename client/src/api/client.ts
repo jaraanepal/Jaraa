@@ -1,0 +1,350 @@
+/**
+ * Typed API client for the Jaraa PWA backend (see api/openapi.yaml).
+ * Base URL: same origin — the API server serves this client's dist/.
+ * Auth: access JWT lives ONLY in memory (module scope); the refresh token
+ * is an httpOnly cookie (`jaraa_rt`) the browser sends automatically, so the
+ * client never reads or stores it.
+ */
+import { ApiError } from "./types";
+import type {
+  Annotation,
+  AnnotationShape,
+  ApiErrorBody,
+  AuditListResponse,
+  Case,
+  CaseListResponse,
+  Checkin,
+  Consent,
+  ConsentType,
+  Consult,
+  CreateOrderPayload,
+  DataDeletionResponse,
+  FeatureFlag,
+  FeatureFlagListResponse,
+  FunnelAnalytics,
+  KitListResponse,
+  Order,
+  OrderStatus,
+  OtpRequestResponse,
+  OtpVerifyResponse,
+  Photo,
+  PhotoAngle,
+  Plan,
+  PlanItemKind,
+  Profile,
+  ProgressBundle,
+  RedFlag,
+  RedFlagType,
+  RootMap,
+  Scan,
+  ScanDetail,
+  ScanRule,
+  ScanRuleListResponse,
+  ScanStage,
+  StageAdvanceResponse,
+  TimelineEvent,
+  PinType,
+} from "./types";
+
+const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || "";
+const API = `${BASE}/api/v1`;
+
+/* ------------------------- access-token store (in memory only) --- */
+let accessToken: string | null = null;
+export function setAccessToken(t: string | null): void {
+  accessToken = t;
+}
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+type AuthExpiredHandler = () => void;
+const authExpiredHandlers = new Set<AuthExpiredHandler>();
+export function onAuthExpired(h: AuthExpiredHandler): () => void {
+  authExpiredHandlers.add(h);
+  return () => authExpiredHandlers.delete(h);
+}
+function emitAuthExpired(): void {
+  setAccessToken(null);
+  authExpiredHandlers.forEach((h) => h());
+}
+
+/* ----------------------------------------------- core request --- */
+let refreshing: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const res = await fetch(`${API}/auth/refresh`, {
+          method: "POST",
+          credentials: "include", // sends the httpOnly jaraa_rt cookie
+        });
+        if (!res.ok) return false;
+        const body = (await res.json()) as { access_token?: string };
+        if (!body.access_token) return false;
+        setAccessToken(body.access_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshing = null;
+      }
+    })();
+  }
+  return refreshing;
+}
+
+interface ReqOpts extends RequestInit {
+  /** skip the automatic 401 -> refresh -> retry (used for auth endpoints) */
+  noRetry?: boolean;
+}
+
+export async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
+  const { noRetry, ...init } = opts;
+  const headers = new Headers(init.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const doFetch = () =>
+    fetch(`${API}${path}`, { ...init, headers, credentials: "include" });
+
+  let res = await doFetch();
+
+  // 401 -> try one silent refresh via the httpOnly cookie, then retry once.
+  if (res.status === 401 && !noRetry && !path.startsWith("/auth/")) {
+    const ok = await refreshAccessToken();
+    if (ok) {
+      const h2 = new Headers(init.headers);
+      const t = getAccessToken();
+      if (t) h2.set("Authorization", `Bearer ${t}`);
+      if (init.body && !(init.body instanceof FormData) && !h2.has("Content-Type")) {
+        h2.set("Content-Type", "application/json");
+      }
+      res = await fetch(`${API}${path}`, { ...init, headers: h2, credentials: "include" });
+    }
+  }
+
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    emitAuthExpired();
+  }
+
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    const errBody = (body ?? { code: "unknown", message: res.statusText }) as ApiErrorBody;
+    throw new ApiError(res.status, {
+      code: errBody.code ?? "unknown",
+      message: errBody.message ?? res.statusText,
+      details: errBody.details,
+    });
+  }
+  return body as T;
+}
+
+const json = (v: unknown) => JSON.stringify(v);
+
+/* -------------------------------------------------------- auth --- */
+export const authApi = {
+  requestOtp: (phone: string) =>
+    request<OtpRequestResponse>("/auth/otp/request", {
+      method: "POST",
+      body: json({ phone }),
+      noRetry: true,
+    }),
+  verifyOtp: (phone: string, code: string, claim_guest_scan_id?: string) =>
+    request<OtpVerifyResponse>("/auth/otp/verify", {
+      method: "POST",
+      body: json({ phone, code, claim_guest_scan_id }),
+      noRetry: true,
+    }),
+  logout: () =>
+    request<void>("/auth/logout", { method: "POST", noRetry: true }).catch(() => undefined),
+};
+
+/* ---------------------------------------------------------- me --- */
+export const meApi = {
+  getProfile: () => request<Profile>("/me/profile"),
+  updateProfile: (patch: Partial<Pick<Profile, "name" | "age_band" | "gender" | "language">>) =>
+    request<Profile>("/me/profile", { method: "PATCH", body: json(patch) }),
+  recordConsent: (type: ConsentType, version: string, granted: boolean) =>
+    request<Consent>("/me/consents", { method: "POST", body: json({ type, version, granted }) }),
+  getPlan: () => request<Plan>("/me/plan"),
+  getRootMapHistory: () => request<{ versions: RootMap[] }>("/me/root-map/history"),
+  createCheckin: (payload: { plan_id?: string; shedding_estimate?: number; note?: string; photo_ids?: string[] }) =>
+    request<Checkin>("/me/checkins", { method: "POST", body: json(payload) }),
+  getProgress: () => request<ProgressBundle>("/me/progress"),
+  requestDataDeletion: () => request<DataDeletionResponse>("/me/data", { method: "DELETE" }),
+};
+
+/* -------------------------------------------------------- scans --- */
+export const scansApi = {
+  /** Guest mode allowed: no auth needed. */
+  createScan: () => request<Scan>("/scans", { method: "POST", body: json({}) }),
+  getScan: (id: string) => request<ScanDetail>(`/scans/${id}`),
+  advanceStage: (id: string, stage: ScanStage) =>
+    request<StageAdvanceResponse>(`/scans/${id}/stage`, { method: "PATCH", body: json({ stage }) }),
+  addTimelineEvent: (
+    id: string,
+    payload: { event_type: PinType; occurred_on: string; note?: string; followup_answers?: Record<string, unknown> },
+  ) => request<{ event: TimelineEvent; red_flags_raised: RedFlag[] }>(`/scans/${id}/timeline-events`, {
+    method: "POST",
+    body: json(payload),
+  }),
+  uploadPhoto: (id: string, angle: PhotoAngle, photo: Blob, consent_id?: string) => {
+    const fd = new FormData();
+    fd.append("angle", angle);
+    fd.append("photo", photo, `${angle}.jpg`);
+    // Optional in the contract: the server validates the granted consent row
+    // independently and 403s (consent_required) when none exists.
+    if (consent_id) fd.append("consent_id", consent_id);
+    return request<Photo>(`/scans/${id}/photos`, { method: "POST", body: fd });
+  },
+  deletePhoto: (id: string, photoId: string) =>
+    request<void>(`/scans/${id}/photos/${photoId}`, { method: "DELETE" }),
+  getRootMap: (id: string) => request<RootMap>(`/scans/${id}/root-map`),
+  submit: (id: string) => request<Case>(`/scans/${id}/submit`, { method: "POST", body: json({}) }),
+};
+
+/* ------------------------------------------------------- doctor --- */
+export const doctorApi = {
+  listCases: (status: "queued" | "in_review" | "reviewed" | "needs_info" = "queued", limit = 20, cursor?: string) => {
+    const q = new URLSearchParams({ status, limit: String(limit) });
+    if (cursor) q.set("cursor", cursor);
+    return request<CaseListResponse>(`/doctor/cases?${q}`);
+  },
+  claimCase: (id: string) => request<Case>(`/doctor/cases/${id}/claim`, { method: "POST", body: json({}) }),
+  annotatePhoto: (caseId: string, photo_id: string, shape: AnnotationShape, note: string) =>
+    request<Annotation>(`/doctor/cases/${caseId}/annotations`, {
+      method: "POST",
+      body: json({ photo_id, shape, note }),
+    }),
+  composePlan: (
+    caseId: string,
+    payload: {
+      items: Array<{
+        kind: PlanItemKind;
+        title_ne: string;
+        title_en: string;
+        detail?: string;
+        product_id?: string;
+        sort_order: number;
+      }>;
+      review_notes?: string;
+      rescan_due_on?: string;
+      resolved_flag_ids?: string[];
+    },
+  ) => request<Plan>(`/doctor/cases/${caseId}/plan`, { method: "POST", body: json(payload) }),
+  approvePlan: (planId: string) => request<Plan>(`/doctor/plans/${planId}/approve`, {
+    method: "POST",
+    body: json({}),
+  }),
+  /** Full case context for review: the scan detail carries timeline, photos, scores, flags. */
+  getCaseScan: (scanId: string) => scansApi.getScan(scanId),
+};
+
+/* --------------------------------------------------------- shop --- */
+export const shopApi = {
+  listKits: (active_only = true) => request<KitListResponse>(`/kits?active_only=${active_only}`),
+  createOrder: (payload: CreateOrderPayload, idempotencyKey: string) =>
+    request<Order>("/orders", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: json(payload),
+    }),
+  /** My orders. */
+  listMyOrders: () => request<{ orders: Order[] }>("/my/orders"),
+  /** Pharmacy fulfilment queue (role: pharmacy | admin). */
+  pharmacyOrders: () => request<{ orders: Order[] }>("/pharmacy/orders"),
+  /** Advance an order's fulfilment status. Accepts contract status names. */
+  updatePharmacyOrder: (id: string, status: OrderStatus, fulfilment_note?: string) =>
+    request<Order>(`/pharmacy/orders/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: json({ status, ...(fulfilment_note ? { fulfilment_note } : {}) }),
+    }),
+};
+
+/* ----------------------------------------------------- consults --- */
+export const consultsApi = {
+  /** 403 feature_disabled while teleconsult_booking is OFF. */
+  book: (doctor_id: string, scheduled_at: string, note?: string) =>
+    request<Consult>("/consults/book", { method: "POST", body: json({ doctor_id, scheduled_at, note }) }),
+};
+
+/* -------------------------------------------------------- flags --- */
+export interface PublicFlags {
+  root_scan: boolean;
+  cosmetic_kits: boolean;
+  teleconsult_booking: boolean;
+  prescription_commerce: boolean;
+}
+
+export const DEFAULT_FLAGS: PublicFlags = {
+  root_scan: true,
+  cosmetic_kits: true,
+  teleconsult_booking: false,
+  prescription_commerce: false,
+};
+
+export const flagsApi = {
+  /**
+   * Public flag snapshot for the customer app. The v1 contract only defines
+   * /admin/flags (admin role); deployments may expose /flags publicly.
+   * Falls back to the pre-legal defaults when unavailable.
+   */
+  getPublic: async (): Promise<PublicFlags> => {
+    try {
+      const body = await request<{ flags: FeatureFlag[] } | PublicFlags>("/flags", { noRetry: true });
+      if (Array.isArray((body as { flags: FeatureFlag[] }).flags)) {
+        const out = { ...DEFAULT_FLAGS };
+        for (const f of (body as { flags: FeatureFlag[] }).flags) {
+          if (f.key in out) (out as Record<string, boolean>)[f.key] = f.is_enabled;
+        }
+        return out;
+      }
+      return { ...DEFAULT_FLAGS, ...(body as PublicFlags) };
+    } catch {
+      return { ...DEFAULT_FLAGS };
+    }
+  },
+};
+
+/* -------------------------------------------------------- admin --- */
+export const adminApi = {
+  listFlags: () => request<FeatureFlagListResponse>("/admin/flags"),
+  setFlag: (key: string, is_enabled: boolean) =>
+    request<FeatureFlag>(`/admin/flags/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: json({ is_enabled }),
+    }),
+  listScanRules: (active_only = true) =>
+    request<ScanRuleListResponse>(`/admin/scan-rules?active_only=${active_only}`),
+  updateScanRule: (
+    id: string,
+    patch: Partial<Pick<ScanRule, "trigger_condition" | "action" | "action_detail" | "priority" | "is_active">>,
+  ) => request<ScanRule>(`/admin/scan-rules/${encodeURIComponent(id)}`, { method: "PUT", body: json(patch) }),
+  getFunnel: (from?: string, to?: string) => {
+    const q = new URLSearchParams();
+    if (from) q.set("from", from);
+    if (to) q.set("to", to);
+    const qs = q.toString();
+    return request<FunnelAnalytics>(`/admin/analytics/funnel${qs ? `?${qs}` : ""}`);
+  },
+  listAudit: (params: { actor_id?: string; entity?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.actor_id) q.set("actor_id", params.actor_id);
+    if (params.entity) q.set("entity", params.entity);
+    q.set("limit", String(params.limit ?? 50));
+    return request<AuditListResponse>(`/admin/audit?${q}`);
+  },
+};
+
+export type { RedFlagType };

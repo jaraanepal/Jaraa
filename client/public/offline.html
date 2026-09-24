@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ne">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jaraa — Offline</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #F7F4EC; color: #1A1A1A;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #fff; border-radius: 16px; padding: 28px; max-width: 420px; text-align: center;
+      box-shadow: 0 4px 20px rgba(30,59,42,.12); }
+    h1 { color: #1E3B2A; }
+    .btn { display: inline-block; margin-top: 16px; background: #1E3B2A; color: #F7F4EC;
+      padding: 12px 28px; border-radius: 12px; text-decoration: none; font-weight: 700; min-height: 44px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Jaraa</h1>
+    <!-- Static fallback: the app shell (and its dictionaries) is unreachable
+         when this page shows, so the copy lives here in both languages and the
+         page honors the user's saved language choice (Nepali default). -->
+    <p id="msg-ne">तपाईं अफलाइन हुनुहुन्छ। तपाईंको ड्राफ्ट यसै डिभाइसमा सुरक्षित छ — पुनः जडान भएपछि जारी राख्नुहोस्।</p>
+    <p id="msg-en" hidden>You are offline. Your saved scan draft is safe on this device — reconnect to continue.</p>
+    <a class="btn" href="/" id="retry">पुनः प्रयास गर्नुहोस्</a>
+  </div>
+  <script>
+    try {
+      var lang = localStorage.getItem("jaraa:lang") || "ne";
+      var isEn = lang === "en";
+      document.getElementById("msg-ne").hidden = isEn;
+      document.getElementById("msg-en").hidden = !isEn;
+      document.getElementById("retry").textContent = isEn ? "Try again" : "पुनः प्रयास गर्नुहोस्";
+      document.documentElement.lang = lang;
+    } catch (e) { /* storage unavailable: Nepali default already shown */ }
+  </script>
+</body>
+</html>
