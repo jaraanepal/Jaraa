@@ -463,18 +463,27 @@ export const adminKitsApi = {
     }),
   /** Soft-delete: the server hides the kit; the UI confirms first. */
   remove: (id: string) => request<void>(`/admin/kits/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  uploadImages: (id: string, files: File[]) => {
-    const fd = new FormData();
-    files.forEach((f) => fd.append("images", f, f.name));
-    return request<AdminKit>(`/admin/kits/${encodeURIComponent(id)}/images`, {
-      method: "POST",
-      body: fd,
-    });
+  /** Upload images one file per request: the server accepts a single
+   *  multipart field named "image" per call. Returns the kit's full
+   *  image URL list after the last upload. */
+  uploadImages: async (id: string, files: File[]): Promise<{ images: string[] }> => {
+    let images: string[] = [];
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append("image", f, f.name);
+      const r = await request<{ images: string[] }>(
+        `/admin/kits/${encodeURIComponent(id)}/images`,
+        { method: "POST", body: fd },
+      );
+      images = r.images;
+    }
+    return { images };
   },
-  deleteImage: (kitId: string, imageId: string) =>
-    request<void>(
-      `/admin/kits/${encodeURIComponent(kitId)}/images/${encodeURIComponent(imageId)}`,
-      { method: "DELETE" },
+  /** Delete one kit image, identified by its public URL. */
+  deleteImage: (kitId: string, imageUrl: string) =>
+    request<{ images: string[] }>(
+      `/admin/kits/${encodeURIComponent(kitId)}/images`,
+      { method: "DELETE", body: JSON.stringify({ image_url: imageUrl }) },
     ),
 };
 

@@ -22,14 +22,15 @@ describe("parseIncluded", () => {
 });
 
 describe("kitPayload", () => {
-  it("builds a full payload from valid form values", () => {
+  it("builds a server-contract payload from valid form values", () => {
     const p = kitPayload(BASE);
     expect("error" in p).toBe(false);
     if (!("error" in p)) {
-      expect(p.name).toBe("Root Repair Kit");
-      expect(p.price_npr).toBe(1499);
+      expect(p.name_en).toBe("Root Repair Kit");
+      expect(p.name_ne).toBe("Shampoo + oil");
+      expect(p.total_npr).toBe(1499);
       expect(p.stock).toBe(25);
-      expect(p.included).toEqual(["Shampoo 250ml", "Hair oil 100ml"]);
+      expect(p.whats_included).toBe("Shampoo 250ml\nHair oil 100ml");
       expect(p.is_active).toBe(true);
     }
   });
@@ -46,13 +47,25 @@ describe("kitPayload", () => {
   });
 
   it("rounds price to whole rupees, omits optional blanks", () => {
-    const p = kitPayload({ ...BASE, priceNpr: "1499.9", stock: "", category: "  ", description: "" });
+    const p = kitPayload({ ...BASE, priceNpr: "1499.9", stock: "", category: "  ", description: "", includedText: "  " });
     expect("error" in p).toBe(false);
     if (!("error" in p)) {
-      expect(p.price_npr).toBe(1500);
+      expect(p.total_npr).toBe(1500);
       expect(p.stock).toBeUndefined();
       expect(p.category).toBeUndefined();
-      expect(p.description).toBeUndefined();
+      expect(p.name_ne).toBeUndefined();
+      expect(p.whats_included).toBeUndefined();
+    }
+  });
+
+  it("uses the server's field names (name_en/total_npr/whats_included)", () => {
+    const p = kitPayload(BASE);
+    expect("error" in p).toBe(false);
+    if (!("error" in p)) {
+      expect(p).not.toHaveProperty("name");
+      expect(p).not.toHaveProperty("price_npr");
+      expect(p).not.toHaveProperty("included");
+      expect(p).not.toHaveProperty("description");
     }
   });
 

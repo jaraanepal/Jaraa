@@ -195,7 +195,7 @@ export function adminRoutes(deps: Deps): Router {
 
   // POST /admin/kits
   r.post("/kits", asyncHandler(async (req: AuthedRequest, res) => {
-    const { name_en, name_ne, product_ids, total_npr, price_npr, category, images, whats_included, usage_instructions, stock } = req.body ?? {};
+    const { name_en, name_ne, product_ids, total_npr, price_npr, category, images, whats_included, usage_instructions, stock, is_active } = req.body ?? {};
     if (!validText(name_en, 200)) throw badRequest("Request failed validation.", { field: "name_en" });
     // price: total_npr is the canonical contract field; price_npr accepted as an alias.
     const priceRaw = total_npr !== undefined ? total_npr : price_npr;
@@ -212,6 +212,8 @@ export function adminRoutes(deps: Deps): Router {
       images: images ?? [],
       whats_included: whats_included ?? null, usage_instructions: usage_instructions ?? null,
       stock: stock === undefined ? 0 : Number(stock),
+      // Honor the admin form's "Active (visible in shop)" checkbox on create, not just on update.
+      is_active: typeof is_active === "boolean" ? is_active : undefined,
     });
     await audit(store, { actorId: req.user!.id, action: "kit.create", entity: "kit", entityId: k.id, ip: clientIp(req) });
     res.status(201).json(toContractKit(k));

@@ -3,7 +3,7 @@ import { adminKitsApi } from "../../api/client";
 import { useLang } from "../../i18n/LanguageContext";
 import { EmptyState, ErrorCard, Loading, apiErrorMessage, toast } from "../../components/ui";
 import { Icon } from "../../components/icons";
-import { kitPayload, type KitFormValues } from "../../lib/kitForm";
+import { kitPayload, parseIncluded, type KitFormValues } from "../../lib/kitForm";
 import type { AdminKit } from "../../api/types";
 
 const PAGE_SIZE = 10;
@@ -21,12 +21,12 @@ const EMPTY_FORM: KitFormValues = {
 
 function toForm(k: AdminKit): KitFormValues {
   return {
-    name: k.name,
-    description: k.description ?? "",
-    priceNpr: String(k.price_npr),
+    name: k.name_en,
+    description: k.name_ne ?? "",
+    priceNpr: String(k.total_npr),
     category: k.category ?? "",
-    stock: k.stock === null || k.stock === undefined ? "" : String(k.stock),
-    includedText: (k.included ?? []).join("\n"),
+    stock: String(k.stock),
+    includedText: k.whats_included ?? "",
     usageInstructions: k.usage_instructions ?? "",
     isActive: k.is_active,
   };
@@ -63,14 +63,14 @@ function KitForm({
     setNewFiles((p) => [...p, ...files]);
   }
 
-  async function removeExistingImage(imageId: string) {
+  const [existingImages, setExistingImages] = useState<string[]>(initial?.kit.images ?? []);
+
+  async function removeExistingImage(imageUrl: string) {
     if (!initial || !window.confirm(t("adminKits.removeImage") + "?")) return;
-    setBusyImage(imageId);
+    setBusyImage(imageUrl);
     try {
-      await adminKitsApi.deleteImage(initial.kit.id, imageId).catch((e) => {
-        if ((e as { status?: number }).status === 404) return undefined; // older server — images stay; honest no-op
-        throw e;
-      });
+      const r = await adminKitsApi.deleteImage(initial.kit.id, imageUrl);
+      setExistingImages(r.images);
       toast(t("common.done"));
     } catch (e) {
       setFormError(apiErrorMessage(t, e));
@@ -106,7 +106,6 @@ function KitForm({
     }
   }
 
-  const existing = initial?.kit.images ?? [];
 
   return (
     <div className="card formgrid">
@@ -133,12 +132,12 @@ function KitForm({
 
       <h4>{t("adminKits.images")}</h4>
       <div className="kitimg-row">
-        {existing.map((img) => (
-          <div className="kitimg" key={img.id}>
-            <img src={img.url} alt="" />
+        {existingImages.map((url) => (
+          <div className="kitimg" key={url}>
+            <img src={url} alt="" />
             <button
-              onClick={() => removeExistingImage(img.id)}
-              disabled={busyImage === img.id}
+              onClick={() => removeExistingImage(url)}
+              disabled={busyImage === url}
               aria-label={t("adminKits.removeImage")}
             >
               <Icon.cross size={16} />
@@ -318,21 +317,21 @@ export default function AdminKits() {
           {kits.map((k) => (
             <div className="card" key={k.id}>
               <div className="rowflex">
-                {k.images?.[0]?.url ? (
-                  <img src={k.images[0].url} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover" }} />
+                {k.images?.[0] ? (
+                  <img src={k.images[0]} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover" }} />
                 ) : (
                   <span style={{ color: "var(--green)" }}><Icon.box size={28} /></span>
                 )}
                 <div>
-                  <b>{k.name}</b>
+                  <b>{k.name_en}</b>
                   <br />
                   <span className="tiny muted">
-                    NPR {k.price_npr}
+                    NPR {k.total_npr}
                     {k.category ? ` · ${k.category}` : ""}
-                    {k.stock !== null && k.stock !== undefined ? ` · ${t("adminKits.stock")}: ${k.stock}` : ""}
+                    {` · ${t("adminKits.stock")}: ${k.stock}`}
                   </span>
                   <br />
-                  <span className="tiny muted">{(k.included ?? []).slice(0, 3).join(" · ")}</span>
+                  <span className="tiny muted">{parseIncluded(k.whats_included ?? "").slice(0, 3).join(" · ")}</span>
                 </div>
                 <span className="spacer" />
                 <span className={`chip${k.is_active ? "" : " grey"}`}>{k.is_active ? t("admin.on") : t("admin.off")}</span>

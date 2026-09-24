@@ -23,7 +23,10 @@ export function parseIncluded(text: string): string[] {
     .filter(Boolean);
 }
 
-/** Validate the form; returns the payload or the i18n key of the error. */
+/** Validate the form; returns the payload or the i18n key of the error.
+ * Field names match the server admin-kit contract (name_en, total_npr,
+ * whats_included, name_ne) — the shop exposes name_ne as the description.
+ */
 export function kitPayload(values: KitFormValues): KitUpsertPayload | { error: string } {
   const name = values.name.trim();
   const price = Number(values.priceNpr);
@@ -33,12 +36,12 @@ export function kitPayload(values: KitFormValues): KitUpsertPayload | { error: s
   const stockRaw = values.stock.trim();
   const stock = stockRaw === "" ? undefined : Math.max(0, Math.floor(Number(stockRaw)));
   return {
-    name,
-    description: values.description.trim() || undefined,
-    price_npr: Math.round(price),
+    name_en: name,
+    name_ne: values.description.trim() || undefined,
+    total_npr: Math.round(price),
     category: values.category.trim() || undefined,
     stock: stockRaw === "" || !Number.isFinite(stock) ? undefined : stock,
-    included: parseIncluded(values.includedText),
+    whats_included: values.includedText.trim() || undefined,
     usage_instructions: values.usageInstructions.trim() || undefined,
     is_active: values.isActive,
   };

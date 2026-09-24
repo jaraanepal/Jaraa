@@ -432,23 +432,19 @@ export interface AdminUserListResponse {
  * The UI treats them as optional: a 404 falls back to an honest
  * "not available yet" state, never invented data.
  */
-export interface AdminKitImage {
-  id: string;
-  url: string;
-}
-
 export interface AdminKit {
   id: string;
-  name: string;
-  description?: string | null;
-  price_npr: number;
+  name_en: string;
+  name_ne?: string | null;
+  total_npr: number;
   category?: string | null;
-  stock?: number | null;
-  /** What's included in the kit (free-text lines). */
-  included?: string[] | null;
+  stock: number;
+  /** What's included in the kit (free-text, one item per line). */
+  whats_included?: string | null;
   usage_instructions?: string | null;
   is_active: boolean;
-  images?: AdminKitImage[] | null;
+  /** Public image URLs. */
+  images: string[];
   created_at?: string;
   updated_at?: string;
 }
@@ -469,12 +465,12 @@ export interface AdminKitListResponse {
 }
 
 export interface KitUpsertPayload {
-  name: string;
-  description?: string;
-  price_npr: number;
+  name_en: string;
+  name_ne?: string;
+  total_npr: number;
   category?: string;
   stock?: number;
-  included?: string[];
+  whats_included?: string;
   usage_instructions?: string;
   is_active: boolean;
 }
