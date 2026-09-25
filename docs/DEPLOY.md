@@ -18,6 +18,12 @@ operational setup, so the same runbook applies.
    - `db/migrations/003_profile_extras.sql` (profiles.photo_path + addresses JSON, private `profile-photos` bucket)
    - `db/migrations/004_password_resets.sql` (single-use password-reset tokens, HMAC-hashed)
    - `db/migrations/005_kit_details.sql` (kit category/images/whats-included/usage/stock/is_active, public `kit-images` bucket)
+   - `db/migrations/006_notifications.sql` (notification queue — replaces the dead 001 placeholder)
+   - `db/migrations/007_dashboard_features.sql` (staff dashboards: order_checks, handover_notes, damage_reports, refunds; orders.courier_name/tracking_id)
+   - `db/migrations/008_batch2.sql` (pharmacy batch 2: stock_movements, packing_checks, kit_batches, suppliers, announcements; orders.delivery_instructions/coupon_code/discount_npr)
+   - `db/migrations/009_batch3.sql` (pharmacy batch 3: quarantine, packaging_materials, order_notes; orders.pack_started_at/pack_completed_at, kits.low_stock_threshold)
+   - `db/migrations/010_batch4.sql` (pharmacy batch 4: delivery_attempts, stock_counts, substitutions, delivery_proofs, refund_requests, dispatch_holidays, courier_claims; orders.is_rush)
+   - `db/migrations/011_pharmacy_columns.sql` (catch-up: orders.shipping_address — missing from every earlier migration — plus all 005/007–010 pharmacy columns; every statement is `IF NOT EXISTS`, so a single run brings a behind DB up to date)
    This creates all tables, RLS policies, the private `scan-photos` storage bucket,
    feature-flag seeds (`teleconsult_booking` OFF, `prescription_commerce` OFF) and the
    `scan_rules` seeds.

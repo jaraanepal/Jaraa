@@ -1,6 +1,6 @@
 // Batch-4 (010) pharmacy API — P28–P45. Uses the exported request() only;
 // local types live in this file. Auth/session handling comes from client.ts.
-import { getAccessToken, request } from "./client";
+import { getAccessToken, refreshAccessToken, request } from "./client";
 import type { Announcement, Order, OrderCheck } from "./types";
 
 export type AttemptStatus = "failed" | "rescheduled" | "delivered";
@@ -148,14 +148,19 @@ export const pharmacyB4Api = {
   // P37 — monthly fulfilment CSV download (blob; request() is JSON-only)
   async downloadMonthlyCsv(month: string): Promise<void> {
     const base = (import.meta.env.VITE_API_BASE_URL as string | undefined) || "";
-    const token = getAccessToken();
-    const res = await fetch(
-      `${base}/api/v1/pharmacy/reports/monthly.csv?month=${encodeURIComponent(month)}`,
-      {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
-      },
-    );
+    const doFetch = (token: string | null) =>
+      fetch(
+        `${base}/api/v1/pharmacy/reports/monthly.csv?month=${encodeURIComponent(month)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
+        },
+      );
+    let res = await doFetch(getAccessToken());
+    // Access tokens expire: try one silent refresh (mirrors request()).
+    if (res.status === 401 && (await refreshAccessToken())) {
+      res = await doFetch(getAccessToken());
+    }
     if (!res.ok) throw new Error(`download failed: ${res.status}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

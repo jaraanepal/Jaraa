@@ -747,15 +747,19 @@ export interface WishlistItem {
 }
 
 /* ---------------- Batch 2 (008) types ---------------- */
-export interface DoctorWorkload { today: { claimed: number; in_review: number }; queue_total: number; capacity: number; overloaded: boolean }
-export interface DoctorSlaSummary { overdue: number; due_within_6h: number }
+/** Matches the real server contract: GET /doctor/workload -> { claimed, in_review, due_soon, overdue }. */
+export interface DoctorWorkload { claimed: number; in_review: number; due_soon: number; overdue: number }
+/** Matches the real server contract: GET /doctor/sla-summary -> { overdue, due_6h }. */
+export interface DoctorSlaSummary { overdue: number; due_6h: number }
 export interface ReplySnippet { id: string; doctor_id: string; title: string; body_en: string; body_ne: string | null; created_at: string }
 export interface ChecklistItem { id: string; checklist_id: string; label_en: string; label_ne: string | null; done: boolean; done_at: string | null }
 export interface ReviewChecklist { id: string; case_id: string; doctor_id: string; items: ChecklistItem[]; created_at: string }
 export interface PatientRisk { level: "low" | "medium" | "high"; red_flag_cases: number; missed_rescans: number }
 export interface PhotoRequest { id: string; case_id: string; doctor_id: string; angles: string; note: string | null; created_at: string }
-export interface DoctorReviewStats { reviewed_total: number; median_minutes: number | null; avg_minutes: number | null }
-export interface DoctorNoteSearchResult { id: string; case_id: string; notes: string; created_at: string }
+/** Matches the real server contract: GET /doctor/stats -> { reviewed_7d, reviewed_30d, avg_review_hours }. */
+export interface DoctorReviewStats { reviewed_7d: number; reviewed_30d: number; avg_review_hours: number | null }
+/** Matches the real server contract: GET /doctor/notes/search rows -> { case_id, snippet, created_at }. */
+export interface DoctorNoteSearchResult { case_id: string; snippet: string; created_at: string }
 
 export interface RolePermission { id: string; role: string; permission: string; granted: boolean; updated_by: string | null; updated_at: string }
 export interface Announcement { id: string; title_en: string; title_ne: string | null; body_en: string | null; body_ne: string | null; link: string | null; starts_at: string | null; ends_at: string | null; is_active: boolean; created_by: string | null; created_at: string }

@@ -37,6 +37,46 @@ import type {
 
 const iso = (d: Date | string | number) => new Date(d).toISOString();
 
+/**
+ * P-14: detect "column does not exist" from PostgREST/supabase-js so writes
+ * can degrade gracefully when a deploy DB hasn't run the latest migration.
+ * PostgREST surfaces it as code PGRST204; raw Postgres as 42703.
+ */
+function isUnknownColumnError(e: unknown): boolean {
+  const code = (e as { code?: string } | null)?.code;
+  if (code === "PGRST204" || code === "42703") return true;
+  const msg = String((e as { message?: string } | null)?.message ?? e ?? "");
+  return /column .* does not exist/i.test(msg);
+}
+
+/**
+ * P-15/P-16: detect "table does not exist" from PostgREST/supabase-js so
+ * READ endpoints can degrade to empty results when a deploy DB hasn't run
+ * the batch migrations yet (007..011). PostgREST surfaces it as PGRST205;
+ * raw Postgres as 42P01.
+ */
+function isUnknownTableError(e: unknown): boolean {
+  const code = (e as { code?: string } | null)?.code;
+  if (code === "PGRST205" || code === "42P01") return true;
+  const msg = String((e as { message?: string } | null)?.message ?? e ?? "");
+  return /relation .* does not exist/i.test(msg) || /could not find the table/i.test(msg);
+}
+
+/**
+ * P-15/P-16: run a read; if the underlying batch-migration table is missing
+ * on the deploy DB, log once and return the fallback instead of 500ing the
+ * whole page. Writes are never degraded — only reads.
+ */
+async function safeRead<T>(label: string, fallback: T, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!isUnknownTableError(e)) throw e;
+    console.warn(`[${label}] table missing — returning empty; run migrations 007..011.`);
+    return fallback;
+  }
+}
+
 export class SupabaseStore implements Store {
   private sb: SupabaseClient;
   constructor(url: string, serviceKey: string) {
@@ -436,15 +476,35 @@ export class SupabaseStore implements Store {
 
   // ---- orders ----
   async createOrder(o: { order_no: string; user_id: string; kit_id: string | null; subtotal_npr: number; shipping_npr: number; total_npr: number; payment_method: string; idempotency_key: string; shipping_address: Record<string, unknown>; delivery_instructions?: string | null; coupon_code?: string | null; discount_npr?: number }) {
-    const { data, error } = await this.sb.from("orders").insert({
+    const base = {
       order_no: o.order_no, user_id: o.user_id, kit_id: o.kit_id,
       subtotal_npr: o.subtotal_npr, shipping_npr: o.shipping_npr, total_npr: o.total_npr,
       payment_method: o.payment_method, idempotency_key: o.idempotency_key,
-      shipping_address: o.shipping_address, delivery_instructions: o.delivery_instructions ?? null,
+    };
+    // P-14: 008 additive columns (delivery_instructions, coupon_code,
+    // discount_npr) + shipping_address (missing from 001..010 — added by
+    // migration 011). Included when the migration has run; if the deploy DB
+    // is behind, fall back to the base insert instead of 500ing checkout.
+    const additive = {
+      shipping_address: o.shipping_address,
+      delivery_instructions: o.delivery_instructions ?? null,
       coupon_code: o.coupon_code ?? null, discount_npr: o.discount_npr ?? 0,
-    }).select().single();
-    if (error) throw error;
-    return data;
+    };
+    const attempt = async (withAdditive: boolean) => {
+      const { data, error } = await this.sb.from("orders")
+        .insert(withAdditive ? { ...base, ...additive } : base).select().single();
+      if (error) throw error;
+      return data;
+    };
+    try {
+      return await attempt(true);
+    } catch (e) {
+      if (isUnknownColumnError(e)) {
+        console.warn("[orders] additive columns missing — order created without address/coupon/delivery fields; run migration 011.");
+        return attempt(false);
+      }
+      throw e;
+    }
   }
   async getOrder(id: string) {
     const { data } = await this.sb.from("orders").select("*").eq("id", id).maybeSingle();
@@ -470,12 +530,23 @@ export class SupabaseStore implements Store {
   }
   async listOrdersForPharmacy() {
     // Fulfillable = paid online orders + pending COD orders (cash on delivery).
-    // P34: rush orders sort first, then oldest-first.
-    const { data, error } = await this.sb.from("orders").select("*")
-      .or("status.in.(paid,fulfilling,shipped),and(status.eq.pending,payment_method.eq.cod)")
-      .order("is_rush", { ascending: false }).order("created_at");
-    if (error) throw error;
-    return data;
+    // P34: rush orders sort first, then oldest-first. is_rush is a 010 column —
+    // if the deploy DB is behind, fall back to plain oldest-first instead of
+    // 500ing the whole pharmacy queue (the client sorts rush-first too).
+    const base = () => this.sb.from("orders").select("*")
+      .or("status.in.(paid,fulfilling,shipped),and(status.eq.pending,payment_method.eq.cod)");
+    try {
+      const { data, error } = await base()
+        .order("is_rush", { ascending: false }).order("created_at");
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      if (!isUnknownColumnError(e)) throw e;
+      console.warn("[orders] is_rush column missing — queue without rush ordering; run migration 011 (or 010).");
+      const { data, error } = await base().order("created_at");
+      if (error) throw error;
+      return data;
+    }
   }
 
   // ---- payments ----
@@ -1093,10 +1164,12 @@ export class SupabaseStore implements Store {
     return data;
   }
   async listSnippets(doctorId: string) {
-    const { data, error } = await this.sb.from("doctor_snippets").select("*")
-      .eq("doctor_id", doctorId).order("created_at");
-    if (error) throw error;
-    return data ?? [];
+    return safeRead("doctor_snippets", [], async () => {
+      const { data, error } = await this.sb.from("doctor_snippets").select("*")
+        .eq("doctor_id", doctorId).order("created_at");
+      if (error) throw error;
+      return data ?? [];
+    });
   }
   async deleteSnippet(id: string, doctorId: string) {
     const { data, error } = await this.sb.from("doctor_snippets").delete()
@@ -1118,9 +1191,11 @@ export class SupabaseStore implements Store {
     return (data ?? []).length > 0;
   }
   async listBookmarks(doctorId: string) {
-    const { data, error } = await this.sb.from("case_bookmarks").select("case_id").eq("doctor_id", doctorId);
-    if (error) throw error;
-    return (data ?? []).map((b) => b.case_id as string);
+    return safeRead("case_bookmarks", [], async () => {
+      const { data, error } = await this.sb.from("case_bookmarks").select("case_id").eq("doctor_id", doctorId);
+      if (error) throw error;
+      return (data ?? []).map((b) => b.case_id as string);
+    });
   }
   async getChecklist(caseId: string, doctorId: string) {
     const { data: cl } = await this.sb.from("review_checklists").select("*")
@@ -1349,10 +1424,12 @@ export class SupabaseStore implements Store {
     return data;
   }
   async listStockMovements(kitId: string, limit: number) {
-    const { data, error } = await this.sb.from("stock_movements").select("*")
-      .eq("kit_id", kitId).order("created_at", { ascending: false }).limit(limit);
-    if (error) throw error;
-    return data ?? [];
+    return safeRead("stock_movements", [], async () => {
+      const { data, error } = await this.sb.from("stock_movements").select("*")
+        .eq("kit_id", kitId).order("created_at", { ascending: false }).limit(limit);
+      if (error) throw error;
+      return data ?? [];
+    });
   }
   async reorderSuggestions(): Promise<{ kit: import("./types").Kit; threshold: number }[]> {
     const { data, error } = await this.sb.from("kits").select("*").eq("is_active", true).order("stock");
@@ -1362,9 +1439,11 @@ export class SupabaseStore implements Store {
       .filter(({ kit, threshold }) => kit.stock <= (threshold ?? 5));
   }
   async getPackingChecks(orderId: string) {
-    const { data, error } = await this.sb.from("packing_checks").select("*").eq("order_id", orderId).order("step");
-    if (error) throw error;
-    return data ?? [];
+    return safeRead("packing_checks", [], async () => {
+      const { data, error } = await this.sb.from("packing_checks").select("*").eq("order_id", orderId).order("step");
+      if (error) throw error;
+      return data ?? [];
+    });
   }
   async setPackingCheck(orderId: string, step: string, done: boolean, checkedBy: string | null) {
     const { data, error } = await this.sb.from("packing_checks")
@@ -1384,10 +1463,22 @@ export class SupabaseStore implements Store {
     return { order: order as unknown as import("./types").Order, items };
   }
   async zoneStats() {
-    const { data, error } = await this.sb.from("orders").select("status,shipping_address").limit(5000);
-    if (error) throw error;
+    // shipping_address is only on orders once migration 011 has run; on a
+    // behind DB fall back to a status-only scan (all orders land in "unknown").
+    let rows: { status: string; shipping_address?: unknown }[];
+    try {
+      const { data, error } = await this.sb.from("orders").select("status,shipping_address").limit(5000);
+      if (error) throw error;
+      rows = (data ?? []) as { status: string; shipping_address?: unknown }[];
+    } catch (e) {
+      if (!isUnknownColumnError(e)) throw e;
+      console.warn("[orders] shipping_address column missing — zone stats degraded; run migration 011.");
+      const { data, error } = await this.sb.from("orders").select("status").limit(5000);
+      if (error) throw error;
+      rows = (data ?? []) as { status: string }[];
+    }
     const zones = new Map<string, { orders: number; delivered: number }>();
-    for (const o of data ?? []) {
+    for (const o of rows) {
       const addr = (o.shipping_address ?? {}) as Record<string, unknown>;
       const zone = String(addr.city ?? addr.district ?? "unknown");
       const z = zones.get(zone) ?? { orders: 0, delivered: 0 };
@@ -1418,11 +1509,13 @@ export class SupabaseStore implements Store {
     return data;
   }
   async listKitBatches(kitId?: string) {
-    let q = this.sb.from("kit_batches").select("*, kit:kits(name_en)").order("expires_on", { ascending: true, nullsFirst: false });
-    if (kitId) q = q.eq("kit_id", kitId);
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data ?? []).map((b) => ({ ...(b as Record<string, unknown>), kit_name: (b as unknown as { kit: { name_en: string } | null }).kit?.name_en } as unknown as import("./types").KitBatch & { kit_name?: string }));
+    return safeRead("kit_batches", [], async () => {
+      let q = this.sb.from("kit_batches").select("*, kit:kits(name_en)").order("expires_on", { ascending: true, nullsFirst: false });
+      if (kitId) q = q.eq("kit_id", kitId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []).map((b) => ({ ...(b as Record<string, unknown>), kit_name: (b as unknown as { kit: { name_en: string } | null }).kit?.name_en } as unknown as import("./types").KitBatch & { kit_name?: string }));
+    });
   }
   async deleteKitBatch(id: string) {
     const { data, error } = await this.sb.from("kit_batches").delete().eq("id", id).select("id");
@@ -1451,9 +1544,11 @@ export class SupabaseStore implements Store {
     return data;
   }
   async listSuppliers() {
-    const { data, error } = await this.sb.from("suppliers").select("*").order("name");
-    if (error) throw error;
-    return data ?? [];
+    return safeRead("suppliers", [], async () => {
+      const { data, error } = await this.sb.from("suppliers").select("*").order("name");
+      if (error) throw error;
+      return data ?? [];
+    });
   }
   async updateSupplier(id: string, patch: Partial<import("./types").Supplier>) {
     const { id: _d, created_at: _c, ...rest } = patch as Record<string, unknown>;
@@ -2060,9 +2155,22 @@ async setQuarantineStatus(id: string, status: "quarantined" | "released" | "writ
 }
 async shiftSummary(date: string): Promise<{ handled: number; pending: number; cod_orders: number }> {
   // date = UTC calendar day "YYYY-MM-DD", matching the MemoryStore semantics.
-  const { data, error } = await this.sb.from("orders")
-    .select("id,status,payment_method,created_at,updated_at,pack_completed_at").limit(5000);
-  if (error) throw error;
+  // pack_completed_at is a 009 column; on a behind DB retry without it
+  // (pack-day handling is then derived from shipped/delivered updates only).
+  let data: { id: string; status: string; payment_method: string; created_at: string; updated_at: string; pack_completed_at?: string | null }[] | null;
+  try {
+    const r = await this.sb.from("orders")
+      .select("id,status,payment_method,created_at,updated_at,pack_completed_at").limit(5000);
+    if (r.error) throw r.error;
+    data = r.data;
+  } catch (e) {
+    if (!isUnknownColumnError(e)) throw e;
+    console.warn("[orders] pack_completed_at column missing — shift summary degraded; run migration 011 (or 009).");
+    const r = await this.sb.from("orders")
+      .select("id,status,payment_method,created_at,updated_at").limit(5000);
+    if (r.error) throw r.error;
+    data = r.data;
+  }
   const handledIds = new Set<string>();
   let pending = 0, cod_orders = 0;
   for (const o of data ?? []) {
@@ -2078,10 +2186,22 @@ async shiftSummary(date: string): Promise<{ handled: number; pending: number; co
   return { handled: handledIds.size, pending, cod_orders };
 }
 async courierPerformance(): Promise<{ courier: string; orders: number; delivered: number }[]> {
-  const { data, error } = await this.sb.from("orders").select("courier_name,status").limit(5000);
-  if (error) throw error;
+  // courier_name is a 007 column; on a behind DB retry without it (every
+  // order lands in "unassigned" instead of 500ing the couriers tab).
+  let rows: { courier_name?: string | null; status: string }[];
+  try {
+    const r = await this.sb.from("orders").select("courier_name,status").limit(5000);
+    if (r.error) throw r.error;
+    rows = (r.data ?? []) as { courier_name?: string | null; status: string }[];
+  } catch (e) {
+    if (!isUnknownColumnError(e)) throw e;
+    console.warn("[orders] courier_name column missing — courier performance degraded; run migration 011 (or 007).");
+    const r = await this.sb.from("orders").select("status").limit(5000);
+    if (r.error) throw r.error;
+    rows = (r.data ?? []) as { status: string }[];
+  }
   const agg = new Map<string, { orders: number; delivered: number }>();
-  for (const o of data ?? []) {
+  for (const o of rows) {
     const courier = (o.courier_name as string | null) ?? "unassigned";
     const a = agg.get(courier) ?? { orders: 0, delivered: 0 };
     a.orders++;

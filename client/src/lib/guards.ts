@@ -42,7 +42,9 @@ export const ROUTE_RULES: Record<string, RouteRule> = {
   "/my-data": { auth: true, roles: ["customer"] },
   "/my-challenges": { auth: true, roles: ["customer"] },
   "/teleconsult": { auth: true, roles: ["customer"] },
+  "/notifications": { auth: true }, // any signed-in role — P-17: was missing, bell taps bounced to "/"
   "/doctor": { auth: true, roles: ["doctor"] }, // /doctor/* prefix
+  "/doctor/case": { auth: true, roles: ["doctor", "admin"] }, // P-18: admins can open the case view from Submitted reviews
   "/admin": { auth: true, roles: ["admin"] }, // /admin/* prefix
   "/pharmacy": { auth: true, roles: ["pharmacy", "admin"] },
   "/coach": { auth: true, roles: ["customer", "coach"] },

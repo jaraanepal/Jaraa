@@ -1,7 +1,23 @@
-import { useEffect, useRef } from "react";
+import { Component, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { scoreColor, scoreWordKey } from "../lib/rootmap";
 import { useLang } from "../i18n/LanguageContext";
 import { Icon } from "./icons";
+
+/**
+ * P-13: section-level error boundary. One crashing widget (e.g. a batch
+ * card whose API shape changed) must never white-screen the whole page —
+ * the section shows a quiet fallback and the rest of the page keeps working.
+ */
+export class SectionBoundary extends Component<{ children: ReactNode; label?: string }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { /* quiet: the section simply hides */ }
+  render() {
+    if (this.state.failed) return null;
+    return this.props.children;
+  }
+}
 
 /* ---------------- toast (imperative, app-wide singleton) --- */
 let toastFn: ((msg: string) => void) | null = null;

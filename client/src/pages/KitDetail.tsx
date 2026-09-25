@@ -7,6 +7,7 @@ import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, Loading, Modal, apiErrorMessage, toast } from "../components/ui";
 import { Icon } from "../components/icons";
 import { GiftCheckoutFields } from "../components/b3customer";
+import { isValidNpPhone, normalizeNpPhone } from "../lib/phone";
 import type { Address, Kit } from "../api/types";
 
 type PayMethod = "cod" | "esewa" | "khalti";
@@ -122,11 +123,16 @@ export default function KitDetail() {
     // P10: a selected saved address fills the payload; otherwise the manual form.
     const chosen = !useNew ? savedAddresses.find((a) => a.id === selectedAddrId) : null;
     const shipName = chosen ? chosen.name : name.trim();
-    const shipPhone = chosen ? chosen.phone : phone.trim();
+    // P-14: normalize saved phones ("+977-98..." etc.) to the 10-digit form.
+    const shipPhone = normalizeNpPhone(chosen ? chosen.phone : phone.trim());
     const shipCity = chosen ? chosen.city : city.trim();
     const shipLine = chosen ? chosen.address_line : address.trim();
-    if (!shipName || !/^9\d{9}$/.test(shipPhone) || !shipLine) {
+    if (!shipName || !shipLine || !shipCity) {
       setError(t("checkout.invalid"));
+      return;
+    }
+    if (!isValidNpPhone(shipPhone)) {
+      setError(t("checkout.invalidPhone"));
       return;
     }
     // U26: gift fields ride on the order payload (server validates + stores).

@@ -415,8 +415,8 @@ export function LoyaltyCard() {
         <div className="tiny muted" style={{ marginTop: 4 }}>{t(`${K}.u25_loyalty.earnRule`)}</div>
       </div>
       <h4>{t(`${K}.u25_loyalty.history`)}</h4>
-      {wallet.history.length === 0 && <p className="muted tiny">{t(`${K}.u25_loyalty.empty`)}</p>}
-      {wallet.history.map((e) => (
+      {(wallet.history ?? []).length === 0 && <p className="muted tiny">{t(`${K}.u25_loyalty.empty`)}</p>}
+      {(wallet.history ?? []).map((e) => (
         <div className="rowflex" key={e.id} style={{ margin: "8px 0" }}>
           <b style={{ color: e.points >= 0 ? "var(--green)" : "var(--bad)" }}>
             {e.points >= 0 ? "+" : ""}{e.points}
@@ -425,7 +425,7 @@ export function LoyaltyCard() {
             {e.reason ?? e.order_id ?? ""}
           </span>
           <span className="spacer" />
-          <span className="tiny muted">{e.created_at.slice(0, 10)}</span>
+          <span className="tiny muted">{(e.created_at ?? "").slice(0, 10)}</span>
         </div>
       ))}
       <p className="tiny muted center" style={{ marginTop: 8 }}>{t(`${K}.u25_loyalty.redeemSoon`)}</p>

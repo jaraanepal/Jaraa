@@ -3,7 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLang } from "../i18n/LanguageContext";
 import { meApi } from "../api/client";
 import type { Address } from "../api/types";
-import { apiErrorMessage, ErrorCard, Loading, toast } from "../components/ui";
+import { apiErrorMessage, ErrorCard, Loading, SectionBoundary, toast } from "../components/ui";
 import { Icon } from "../components/icons";
 import { LeaderboardOptIn, LoyaltyCard } from "../components/b3customer";
 import {
@@ -296,10 +296,10 @@ export default function Profile() {
       </div>
 
       {/* U30: profile completion meter (batch 4) */}
-      <ProfileCompletion />
+      <SectionBoundary><ProfileCompletion /></SectionBoundary>
 
       {/* U25: loyalty wallet */}
-      <LoyaltyCard />
+      <SectionBoundary><LoyaltyCard /></SectionBoundary>
 
       {/* Details */}
       <div className="card">
@@ -339,10 +339,10 @@ export default function Profile() {
       </div>
 
       {/* U30/U46: content-language + default payment (batch 4) */}
-      <PreferencesCard />
+      <SectionBoundary><PreferencesCard /></SectionBoundary>
 
       {/* U32: referrals (batch 4) */}
-      <ReferralCard />
+      <SectionBoundary><ReferralCard /></SectionBoundary>
 
       {/* Addresses */}
       <div className="card">
@@ -393,24 +393,24 @@ export default function Profile() {
       </div>
 
       {/* U37: app feedback (batch 4) */}
-      <FeedbackForm />
+      <SectionBoundary><FeedbackForm /></SectionBoundary>
 
       {/* U36: consent history (batch 4) */}
-      <ConsentHistory />
+      <SectionBoundary><ConsentHistory /></SectionBoundary>
 
       {/* U45: signed-in sessions (batch 4) */}
-      <SessionsCard />
+      <SectionBoundary><SessionsCard /></SectionBoundary>
 
       {/* U44: data export incl. photo link (batch 4) */}
-      <DataExportCard />
+      <SectionBoundary><DataExportCard /></SectionBoundary>
 
       {/* U47: text size (batch 4) */}
-      <TextSizeControl />
+      <SectionBoundary><TextSizeControl /></SectionBoundary>
 
       {/* U38: app tour (batch 4) */}
       <div className="card">
         <h2>{t("p12d.customer.tourTitle")}</h2>
-        <TourReplay />
+        <SectionBoundary><TourReplay /></SectionBoundary>
       </div>
 
       {/* U17: notification preferences */}
@@ -427,7 +427,7 @@ export default function Profile() {
         ))}
         {/* C19: streak-board leaderboard opt-in */}
         <h2>{t("p12c.customer.leaderboard.title")}</h2>
-        <LeaderboardOptIn />
+        <SectionBoundary><LeaderboardOptIn /></SectionBoundary>
       </div>
 
       {/* U18: dark mode */}

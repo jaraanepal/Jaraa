@@ -4,7 +4,7 @@ import { doctorApi } from "../../api/client";
 import { useLang } from "../../i18n/LanguageContext";
 import { EmptyState, ErrorCard, StatCard, apiErrorMessage, toast } from "../../components/ui";
 import { useAsync } from "../../components/useAsync";
-import type { ReplySnippet } from "../../api/types";
+import type { DoctorNoteSearchResult, ReplySnippet } from "../../api/types";
 
 /**
  * Doctor batch-2 (008) toolkit: workload banner (D10), SLA banner (D11),
@@ -55,7 +55,7 @@ export default function DoctorTools() {
 
   // ---- D18 notes search ----
   const [nq, setNq] = useState("");
-  const [nresults, setNresults] = useState<{ id: string; case_id: string; notes: string; created_at: string }[]>([]);
+  const [nresults, setNresults] = useState<DoctorNoteSearchResult[]>([]);
   const [nerr, setNerr] = useState<string | null>(null);
   async function searchNotes() {
     setNerr(null);
@@ -67,42 +67,44 @@ export default function DoctorTools() {
     <div className="page">
       <h1>{t(`${K}.title`)}</h1>
 
-      {/* D10 workload banner */}
+      {/* D10 workload banner — fields match the server contract
+          { claimed, in_review, due_soon, overdue }. */}
       {workload.data && (
-        <section className={`banner${workload.data.overloaded ? " warn" : ""}`} aria-live="polite">
+        <section className={`banner${workload.data.overdue > 0 ? " warn" : ""}`} aria-live="polite">
           <strong>{t(`${K}.workload`)}</strong>
           <span>
             {t(`${K}.workloadLine`, {
-              claimed: workload.data.today.claimed,
-              inReview: workload.data.today.in_review,
-              queue: workload.data.queue_total,
-              capacity: workload.data.capacity,
+              claimed: workload.data.claimed,
+              inReview: workload.data.in_review,
+              dueSoon: workload.data.due_soon,
+              overdue: workload.data.overdue,
             })}
           </span>
-          {workload.data.overloaded && <span className="chip warn">{t(`${K}.overloaded`)}</span>}
+          {workload.data.overdue > 0 && <span className="chip warn">{t(`${K}.overdueChip`, { n: workload.data.overdue })}</span>}
         </section>
       )}
 
       {/* D11 SLA banner */}
-      {sla.data && (sla.data.overdue > 0 || sla.data.due_within_6h > 0) && (
+      {sla.data && (sla.data.overdue > 0 || sla.data.due_6h > 0) && (
         <section className="banner warn" aria-live="polite">
           <strong>{t(`${K}.sla`)}</strong>
           <span>
-            {t(`${K}.slaLine`, { overdue: sla.data.overdue, soon: sla.data.due_within_6h })}
+            {t(`${K}.slaLine`, { overdue: sla.data.overdue, soon: sla.data.due_6h })}
           </span>
           <Link className="btn small" to="/doctor">{t(`${K}.openQueue`)}</Link>
         </section>
       )}
 
-      {/* D17 personal stats */}
+      {/* D17 personal stats — fields match the server contract
+          { reviewed_7d, reviewed_30d, avg_review_hours }. */}
       <section>
         <h2>{t(`${K}.myStats`)}</h2>
         {stats.error ? <ErrorCard message={apiErrorMessage(t, stats.error)} onRetry={stats.retry} /> : null}
         {stats.data && (
           <div className="statgrid">
-            <StatCard label={t(`${K}.reviewedTotal`)} value={String(stats.data.reviewed_total)} />
-            <StatCard label={t(`${K}.medianMinutes`)} value={stats.data.median_minutes == null ? "–" : String(stats.data.median_minutes)} />
-            <StatCard label={t(`${K}.avgMinutes`)} value={stats.data.avg_minutes == null ? "–" : String(stats.data.avg_minutes)} />
+            <StatCard label={t(`${K}.reviewed7d`)} value={String(stats.data.reviewed_7d)} />
+            <StatCard label={t(`${K}.reviewed30d`)} value={String(stats.data.reviewed_30d)} />
+            <StatCard label={t(`${K}.avgReviewHours`)} value={stats.data.avg_review_hours == null ? "–" : String(stats.data.avg_review_hours)} />
           </div>
         )}
       </section>
@@ -158,7 +160,7 @@ export default function DoctorTools() {
         {risk && (
           <p>
             <span className={`chip ${risk.level}`}>{t(`${K}.risk.${risk.level}`)}</span>{" "}
-            {t(`${K}.riskLine`, { flags: risk.red_flag_cases, missed: risk.missed_rescans })}
+            {t(`${K}.riskLine`, { flags: risk.red_flag_cases, rescans: risk.missed_rescans })}
           </p>
         )}
       </section>
@@ -173,10 +175,10 @@ export default function DoctorTools() {
         {nerr && <ErrorCard message={nerr} />}
         {nresults.length > 0 && (
           <ul className="list">
-            {nresults.map((r) => (
-              <li key={r.id}>
+            {nresults.map((r, i) => (
+              <li key={`${r.case_id}-${r.created_at}-${i}`}>
                 <Link to={`/doctor/case/${r.case_id}`}>{r.case_id.slice(0, 8)}…</Link>
-                <p className="muted">{r.notes.slice(0, 160)}</p>
+                <p className="muted">{r.snippet}</p>
               </li>
             ))}
           </ul>

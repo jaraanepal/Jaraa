@@ -348,6 +348,9 @@ export default function AdminDashboard() {
           <Link className="dashlink" to="/admin/audit">
             <Icon.doc size={20} /> {t("admin.auditTitle")} <span className="spacer">›</span>
           </Link>
+          <Link className="dashlink" to="/admin/cases">
+            <Icon.clock size={20} /> {t("adminCases.title")} <span className="spacer">›</span>
+          </Link>
 
           <h3>{t("p12c.admin.moderation.title")} — {t("p12c.admin.moderation.queue")}</h3>
           <ModerationQueue />

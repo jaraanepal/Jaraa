@@ -164,4 +164,23 @@ describe("role-mismatch dashboard targets (P11)", () => {
     expect(checkAccess(cust("doctor"), "/pharmacy")).toBe("forbidden");
     expect(checkAccess(cust("pharmacy"), "/coach")).toBe("forbidden");
   });
+
+  it("P-17: /notifications is an authenticated route for every signed-in role", () => {
+    const rule = matchRule("/notifications");
+    expect(rule).not.toBeNull();
+    expect(rule!.auth).toBe(true);
+    expect(rule!.roles).toBeUndefined(); // no role restriction
+    expect(checkAccess(anon, "/notifications")).toBe("login");
+    const roles: Role[] = ["customer", "doctor", "admin", "pharmacy", "coach"];
+    for (const role of roles) {
+      expect(checkAccess(cust(role), "/notifications"), `role ${role}`).toBe("allow");
+    }
+  });
+
+  it("P-18: admins may open the doctor case view from Submitted reviews", () => {
+    expect(checkAccess(cust("doctor"), "/doctor/case/abc123")).toBe("allow");
+    expect(checkAccess(cust("admin"), "/doctor/case/abc123")).toBe("allow");
+    expect(checkAccess(cust(), "/doctor/case/abc123")).toBe("forbidden");
+    expect(checkAccess(anon, "/doctor/case/abc123")).toBe("login");
+  });
 });

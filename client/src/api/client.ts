@@ -114,7 +114,8 @@ function emitAuthExpired(): void {
 /* ----------------------------------------------- core request --- */
 let refreshing: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
+/** Silent refresh via the httpOnly cookie. Exported for non-JSON downloads (CSV). */
+export async function refreshAccessToken(): Promise<boolean> {
   if (!refreshing) {
     refreshing = (async () => {
       try {

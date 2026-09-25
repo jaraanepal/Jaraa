@@ -51,6 +51,7 @@ const AdminFinance = lazy(() => import("./pages/admin/AdminFinance"));
 const AdminTickets = lazy(() => import("./pages/admin/AdminTickets"));
 const AdminArticles = lazy(() => import("./pages/admin/AdminArticles"));
 const AdminKitAnalytics = lazy(() => import("./pages/admin/AdminKitAnalytics"));
+const AdminCases = lazy(() => import("./pages/admin/AdminCases"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy"));
 const Coach = lazy(() => import("./pages/Coach"));
 const CoachFollowups = lazy(() => import("./pages/Coach").then((m) => ({ default: m.CoachFollowups })));
@@ -158,6 +159,7 @@ export default function App() {
                   <Route path="/admin/finance" element={<Guard><AdminFinance /></Guard>} />
                   <Route path="/admin/tickets" element={<Guard><AdminTickets /></Guard>} />
                   <Route path="/admin/articles" element={<Guard><AdminArticles /></Guard>} />
+                  <Route path="/admin/cases" element={<Guard><AdminCases /></Guard>} />
                   <Route path="/admin/kit-analytics" element={<Guard><AdminKitAnalytics /></Guard>} />
                   <Route path="/admin/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/admin/tools" element={<Guard><AdminTools /></Guard>} />

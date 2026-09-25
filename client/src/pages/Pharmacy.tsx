@@ -820,7 +820,7 @@ function ExpiryTab() {
         </button>
       </div>
       {loading && <Loading />}
-      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>retry</button></p> : null}
+      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>{t("common.retry")}</button></p> : null}
       {!loading && !error && rows.length === 0 && (
         <p className="tiny muted">{t("p12d.pharmacy.expiryEmpty")}</p>
       )}
@@ -969,7 +969,7 @@ function ClaimsTab() {
         ))}
       </div>
       {loading && <Loading />}
-      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>retry</button></p> : null}
+      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>{t("common.retry")}</button></p> : null}
       {!loading && !error && claims.length === 0 && (
         <p className="tiny muted">{t("p12d.pharmacy.claimEmpty")}</p>
       )}
@@ -1074,7 +1074,7 @@ function HolidaysTab() {
         </button>
       </div>
       {loading && <Loading />}
-      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>retry</button></p> : null}
+      {error ? <p className="tiny" style={{ color: "var(--red)" }}>{apiErrorMessage(t, error)} <button className="btn btn-s" onClick={retry}>{t("common.retry")}</button></p> : null}
       {!loading && !error && holidays.length === 0 && (
         <p className="tiny muted">{t("p12d.pharmacy.holidaysEmpty")}</p>
       )}
@@ -1823,7 +1823,7 @@ export default function Pharmacy() {
       <h1>{t("pharmacy.title")}</h1>
       <p className="muted tiny">{t("pharmacy.sub")}</p>
       <AnnouncementsBanner />
-      {error && <ErrorCard message={error} />}
+      {error && <ErrorCard message={error} onRetry={load} />}
       {notice && (
         <NoticeBox tone="ok" title="">
           <p className="tiny">{notice}</p>
