@@ -11,6 +11,7 @@ import { shopRoutes } from "./modules/shop/routes";
 import { consultsRoutes } from "./modules/consults/routes";
 import { coachRoutes } from "./modules/coach/routes";
 import { adminRoutes } from "./modules/admin/routes";
+import { notificationRoutes } from "./modules/notifications/routes";
 import { errorMiddleware, notFound } from "./http";
 import type { Deps } from "./deps";
 
@@ -35,6 +36,7 @@ export function buildApp(deps: Deps, opts: AppOptions = {}) {
   api.use("/consults", consultsRoutes(deps));
   api.use("/coach", coachRoutes(deps));
   api.use("/admin", adminRoutes(deps));
+  api.use("/notifications", notificationRoutes(deps));
   api.use("/", shopRoutes(deps)); // /kits, /orders, /payments/:provider/callback, /pharmacy/...
   app.use("/api/v1", api);
 

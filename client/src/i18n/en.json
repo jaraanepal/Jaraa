@@ -132,7 +132,9 @@
     "paymentMethod": "Payment method",
     "phone": "Phone",
     "placeOrder": "Place order — NPR {total}",
-    "title": "Checkout"
+    "title": "Checkout",
+    "savedAddresses": "Choose a saved address",
+    "useNewAddress": "Use a new address"
   },
   "coach": {
     "cards": [
@@ -245,7 +247,8 @@
     "tplStressLabel": "Stress & sleep",
     "tplStressText": "Stress and short sleep seem to be driving extra shedding. The sleep steps in your plan are the priority — we will review in 6 to 8 weeks.",
     "tplWatchLabel": "Watch & re-scan",
-    "tplWatchText": "No urgent concern from this review. Keep the habits in your plan and complete the re-scan on the due date so we can compare."
+    "tplWatchText": "No urgent concern from this review. Keep the habits in your plan and complete the re-scan on the due date so we can compare.",
+    "attachKitHint": "Cosmetic kits only. The patient orders through the normal shop checkout."
   },
   "errors": {
     "conflict": "This was already recorded.",
@@ -640,7 +643,10 @@
     "kitCta": "Get the recommended kit",
     "rescanDue": "Re-scan due:",
     "reviewNotes": "Dermatologist's notes",
-    "title": "My Plan"
+    "title": "My Plan",
+    "prescribedTitle": "Prescribed by your doctor",
+    "prescribedSub": "Your dermatologist recommended these kits for your plan. Order through the normal shop checkout.",
+    "orderKit": "Order"
   },
   "profile": {
     "title": "Profile",
@@ -982,5 +988,11 @@
   },
   "splash": {
     "loading": "Getting things ready"
+  },
+  "notif": {
+    "title": "Notifications",
+    "unread": "{n} unread",
+    "emptyTitle": "No notifications yet",
+    "emptyBody": "When your dermatologist reviews your scan or your plan is ready, you'll see it here."
   }
 }

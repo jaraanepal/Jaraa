@@ -4,7 +4,7 @@ import type {
   User, Role, Profile, Consent, OtpRow, Scan, TimelineEvent, Photo, PhotoAngle,
   RootScoreRow, RedFlag, ScanRule, Case, Annotation, Plan, PlanItemInput,
   Product, Kit, Order, Payment, Consult, Checkin, FeatureFlag, AuditEntry,
-  RefreshToken, DeletionRequest, AnalyticsSnapshot, PasswordResetRow,
+  RefreshToken, DeletionRequest, AnalyticsSnapshot, PasswordResetRow, AppNotification,
 } from "./types";
 
 export interface Store {
@@ -115,6 +115,10 @@ export interface Store {
   deletePasswordReset(tokenHash: string): Promise<void>;
   // deletion requests
   createDeletionRequest(r: { user_id: string; scheduled_for: string; note: string }): Promise<DeletionRequest>;
+  // notifications (P-6)
+  createNotification(n: { user_id: string; type: string; title_en: string; title_ne?: string | null; body_en?: string | null; body_ne?: string | null; link?: string | null }): Promise<AppNotification>;
+  listNotifications(userId: string, opts: { limit: number; offset: number }): Promise<{ notifications: AppNotification[]; unreadCount: number }>;
+  markNotificationRead(id: string, userId: string): Promise<AppNotification | null>;
   // analytics
   analyticsSnapshot(): Promise<AnalyticsSnapshot>;
 }

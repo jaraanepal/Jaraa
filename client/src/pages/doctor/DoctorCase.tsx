@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { doctorApi } from "../../api/client";
+import { doctorApi, shopApi } from "../../api/client";
 import { useLang } from "../../i18n/LanguageContext";
 import { Chip, ErrorCard, Loading, NoticeBox, ScoreBar, apiErrorMessage, toast } from "../../components/ui";
 import { Icon } from "../../components/icons";
-import type { AnnotationShape, Case, PlanItemKind, RedFlag, RootKey, ScanDetail } from "../../api/types";
+import type { AnnotationShape, Case, Kit, PlanItemKind, RedFlag, RootKey, ScanDetail } from "../../api/types";
 
 interface ComposerItem {
   kind: PlanItemKind;
   title: string;
   detail: string;
+  kit_id?: string;
 }
 
 const NOTE_TEMPLATES = ["tplShedding", "tplScalp", "tplNutrition", "tplStress", "tplWatch"] as const;
@@ -34,16 +35,23 @@ export default function DoctorCase() {
   const [resolveIds, setResolveIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState(false);
+  // P-8: kits the doctor can prescribe (cosmetic kits only).
+  const [kits, setKits] = useState<Kit[]>([]);
+
+  useEffect(() => {
+    shopApi.listKits(true).then((r) => setKits(r.kits)).catch(() => { /* optional */ });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
     (async () => {
       try {
-        // The v1 contract has no get-case-by-id; find it across the queues.
-        const [q, r] = await Promise.all([doctorApi.listCases("queued"), doctorApi.listCases("in_review")]);
-        const c = [...q.cases, ...r.cases].find((x) => x.id === id) ?? null;
+        // Fetch the case directly by id — the old approach (find it in the
+        // first page of queued + in_review) broke for reviewed/needs_info
+        // cases and for queues longer than one page, showing "Not found."
+        const c = await doctorApi.getCase(id);
         setTheCase(c);
-        if (c) setScan(await doctorApi.getCaseScan(c.scan_id));
+        setScan(await doctorApi.getCaseScan(c.scan_id));
         setLoading(false);
       } catch (e) {
         setError(apiErrorMessage(t, e));
@@ -109,6 +117,7 @@ export default function DoctorCase() {
           title_ne: i.title.trim(),
           title_en: i.title.trim(),
           detail: i.detail.trim() || undefined,
+          kit_id: i.kit_id || undefined,
           sort_order: n,
         })),
         review_notes: reviewNotes.trim() || undefined,
@@ -263,6 +272,24 @@ export default function DoctorCase() {
               onChange={(e) => setItems((v) => v.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)))}
               aria-label={t("doctor.planActionPh")}
             />
+            {item.kind === "product" && (
+              <>
+                <label className="fl" htmlFor={`kit-${n}`}>{t("doctor.attachKit")}</label>
+                <select
+                  id={`kit-${n}`}
+                  value={item.kit_id ?? ""}
+                  onChange={(e) => setItems((v) => v.map((x, i) => (i === n ? { ...x, kit_id: e.target.value || undefined } : x)))}
+                >
+                  <option value="">{t("doctor.noKit")}</option>
+                  {kits.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name} — NPR {k.total_npr}
+                    </option>
+                  ))}
+                </select>
+                <p className="tiny muted" style={{ margin: "4px 0 0" }}>{t("doctor.attachKitHint")}</p>
+              </>
+            )}
           </div>
         ))}
         <button

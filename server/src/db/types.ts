@@ -86,7 +86,7 @@ export interface Annotation {
 
 export interface PlanItemInput {
   kind: string; title_ne?: string; title_en?: string; detail?: string;
-  product_id?: string; sort_order: number;
+  product_id?: string; kit_id?: string; sort_order: number;
 }
 export interface PlanItem {
   id: string; plan_id: string; kind: string; title_ne: string | null; title_en: string | null;
@@ -165,4 +165,11 @@ export interface AnalyticsSnapshot {
   plan_view_to_kit_rate: number;
   rescan_rate_m2: number;
   red_flag_misses: number;
+}
+
+export interface AppNotification {
+  id: string; user_id: string; type: string;
+  title_en: string; title_ne: string | null;
+  body_en: string | null; body_ne: string | null;
+  link: string | null; read_at: string | null; created_at: string;
 }

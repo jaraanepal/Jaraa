@@ -28,6 +28,7 @@ function toContractPlan(plan: Plan) {
       title_ne: it.title_ne, title_en: it.title_en,
       detail: (it.detail as { text?: string | null })?.text ?? null,
       product_id: (it.detail as { product_id?: string | null })?.product_id ?? null,
+      kit_id: (it.detail as { kit_id?: string | null })?.kit_id ?? null,
       sort_order: it.sort,
     })),
   };
@@ -123,6 +124,13 @@ export function doctorRoutes(deps: Deps): Router {
             { product_id: it.product_id });
         }
       }
+      // P-8: doctor-prescribed kits — must be a real, active cosmetic kit.
+      if (it.kit_id) {
+        const kit = await store.getKit(String(it.kit_id));
+        if (!kit || !kit.is_active) {
+          throw badRequest("Request failed validation.", { field: "items[].kit_id" });
+        }
+      }
     }
     if (resolved_flag_ids) {
       const flags = await store.listRedFlags(kase.scan_id);
@@ -137,12 +145,25 @@ export function doctorRoutes(deps: Deps): Router {
       rescan_due_on: rescan_due_on ?? null,
       items: items.map((it, i: number) => ({
         kind: it.kind, title_ne: it.title_ne ?? null, title_en: it.title_en ?? null,
-        detail: it.detail ?? null, product_id: it.product_id ?? null,
+        detail: it.detail ?? null, product_id: it.product_id ?? null, kit_id: it.kit_id ?? null,
         sort_order: Number.isInteger(it.sort_order) ? it.sort_order : i,
       })),
       resolved_flag_ids: resolved_flag_ids?.map(String),
     });
     await audit(store, { actorId: req.user!.id, action: "plan.create", entity: "plan", entityId: plan.id, ip: clientIp(req) });
+    // P-6: notify the user when the doctor resolves their red flags (fire-and-forget)
+    if (resolved_flag_ids?.length) {
+      const scan = await store.getScan(kase.scan_id);
+      if (scan?.user_id) {
+        store.createNotification({
+          user_id: scan.user_id, type: "flags_resolved", link: "/progress",
+          title_en: "Doctor reviewed the flagged items",
+          title_ne: "डाक्टरले चिन्ह लगाइएका विषय समीक्षा गर्नुभयो",
+          body_en: "Your dermatologist has reviewed and resolved the flagged items on your scan. Your plan is being prepared.",
+          body_ne: "तपाईंको छाला रोग विशेषज्ञले स्क्यानका चिन्ह लगाइएका विषयहरू समीक्षा गरी समाधान गर्नुभएको छ। तपाईंको योजना तयार हुँदैछ।",
+        }).catch((e) => console.error("[notify flags_resolved]", e));
+      }
+    }
     res.status(201).json(toContractPlan(plan));
   }));
 
@@ -172,6 +193,20 @@ export function doctorRoutes(deps: Deps): Router {
         sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
       }
     } catch (e) { console.error("[plan-approved notify]", e); }
+    // P-6: in-app notification (fire-and-forget)
+    try {
+      const kase = await store.getCase(plan.case_id);
+      const scan = kase ? await store.getScan(kase.scan_id) : null;
+      if (scan?.user_id) {
+        await store.createNotification({
+          user_id: scan.user_id, type: "plan_approved", link: "/plan",
+          title_en: "Your dermatologist-approved plan is ready",
+          title_ne: "तपाईंको छाला रोग विशेषज्ञले अनुमोदन गरेको योजना तयार छ",
+          body_en: "Your doctor has reviewed your scan and approved your personal plan. Open it to see the next steps.",
+          body_ne: "तपाईंको डाक्टरले स्क्यान समीक्षा गरी व्यक्तिगत योजना अनुमोदन गर्नुभएको छ। अर्को चरण हेर्न खोल्नुहोस्।",
+        }).catch((e) => console.error("[notify plan_approved]", e));
+      }
+    } catch (e) { console.error("[plan-approved in-app notify]", e); }
     res.json(toContractPlan(plan));
   }));
 

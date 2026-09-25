@@ -135,12 +135,15 @@ p { margin: 5px 0; }
 
 /* P8: every text-like input shares one full-width rule — email/password were
    missing from the selector, so auth inputs rendered at the narrow native
-   size while buttons were full width. Checkbox/radio/range keep their own rules. */
+   size while buttons were full width. Checkbox/radio/range keep their own rules.
+   P9: font-size is 16px (not 14px) — iOS Safari auto-zooms on focus for any
+   input under 16px, which made the page "jump" when typing. 16px is Apple's
+   recommended fix and keeps user pinch-zoom working. */
 input[type="text"], input[type="email"], input[type="password"], input[type="tel"],
 input[type="number"], input[type="search"], input[type="url"], input[type="date"],
 textarea, select {
   width: 100%; border: 2px solid var(--line); border-radius: 12px; min-height: 44px;
-  padding: 8px 10px; font-size: 14px; font-family: inherit; margin: 4px 0; background: #fff; color: var(--ink);
+  padding: 8px 10px; font-size: 16px; font-family: inherit; margin: 4px 0; background: #fff; color: var(--ink);
 }
 input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus,
 input[type="tel"]:focus, input[type="number"]:focus, input[type="search"]:focus,
@@ -202,7 +205,7 @@ label.fl { display: block; font-weight: 700; font-size: 13px; margin: 6px 0 2px;
 table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.grid th, table.grid td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 table.grid th { background: #eef4f0; }
-table.grid input { border: 1px solid var(--line); border-radius: 8px; min-height: 44px; font-size: 13px; padding: 6px 8px; width: 100%; margin: 0; }
+table.grid input { border: 1px solid var(--line); border-radius: 8px; min-height: 44px; font-size: 16px; padding: 6px 8px; width: 100%; margin: 0; }
 .switch { position: relative; width: 56px; height: 32px; flex: none; display: inline-block; }
 .switch input { opacity: 0; width: 56px; height: 32px; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
 .sw { position: absolute; inset: 0; background: #c9d2cd; border-radius: 999px; transition: 0.2s; pointer-events: none; }

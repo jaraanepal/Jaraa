@@ -386,6 +386,14 @@ export function scansRoutes(deps: Deps): Router {
         sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
       }
     } catch (e) { console.error("[scan-submitted notify]", e); }
+    // P-6: in-app notification (fire-and-forget)
+    store.createNotification({
+      user_id: scan.user_id, type: "case_submitted", link: "/progress",
+      title_en: "Scan submitted — with the dermatologist",
+      title_ne: "स्क्यान बुझाइयो — छाला रोग विशेषज्ञसँग",
+      body_en: "Your case is in the dermatologist review queue. We'll notify you when the review is done.",
+      body_ne: "तपाईंको केस छाला रोग विशेषज्ञको समीक्षा सूचीमा छ। समीक्षा सकिएपछि हामी जानकारी दिनेछौं।",
+    }).catch((e) => console.error("[notify case_submitted]", e));
     res.status(201).json(toContractCase(kase, scan.user_id));
   }));
 

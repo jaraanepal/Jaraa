@@ -121,7 +121,21 @@ export interface PlanItem {
   title_en: string;
   detail?: string | null;
   product_id?: string | null;
+  kit_id?: string | null;
   sort_order: number;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  type: string;
+  title_en: string;
+  title_ne?: string | null;
+  body_en?: string | null;
+  body_ne?: string | null;
+  link?: string | null;
+  read_at?: string | null;
+  created_at: string;
 }
 
 export interface Plan {

@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { shopApi } from "../api/client";
+import { meApi, shopApi } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, Loading, Modal, apiErrorMessage, toast } from "../components/ui";
 import { Icon } from "../components/icons";
-import type { Kit } from "../api/types";
+import type { Address, Kit } from "../api/types";
 
 type PayMethod = "cod" | "esewa" | "khalti";
 
 export default function KitDetail() {
   const { id } = useParams<{ id: string }>();
   const { t } = useLang();
+  const { isAuthed, isGuest } = useAuth();
   const [kit, setKit] = useState<Kit | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,11 @@ export default function KitDetail() {
   const [pay, setPay] = useState<PayMethod>("cod");
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  // P10: saved addresses — selectable cards so the user doesn't retype.
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [addrLoading, setAddrLoading] = useState(false);
+  const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
+  const [useNew, setUseNew] = useState(true);
 
   useEffect(() => {
     if (!id) return;
@@ -39,9 +46,40 @@ export default function KitDetail() {
       });
   }, [id, t]);
 
+  // P10: when the checkout modal opens for a signed-in (non-guest) user,
+  // load their saved addresses so they can pick one instead of retyping.
+  useEffect(() => {
+    if (!checkoutOpen || !isAuthed || isGuest) return;
+    setAddrLoading(true);
+    meApi
+      .listAddresses()
+      .then((r) => {
+        const addrs = r.addresses ?? [];
+        setSavedAddresses(addrs);
+        if (addrs.length > 0) {
+          const def = addrs.find((a) => a.is_default) ?? addrs[0];
+          setSelectedAddrId(def.id);
+          setUseNew(false);
+        } else {
+          setUseNew(true);
+        }
+      })
+      .catch(() => {
+        // Address fetch failed — fall back to the manual form.
+        setUseNew(true);
+      })
+      .finally(() => setAddrLoading(false));
+  }, [checkoutOpen, isAuthed, isGuest]);
+
   async function placeOrder() {
     if (!kit) return;
-    if (!name.trim() || !/^9\d{9}$/.test(phone.trim()) || !address.trim()) {
+    // P10: a selected saved address fills the payload; otherwise the manual form.
+    const chosen = !useNew ? savedAddresses.find((a) => a.id === selectedAddrId) : null;
+    const shipName = chosen ? chosen.name : name.trim();
+    const shipPhone = chosen ? chosen.phone : phone.trim();
+    const shipCity = chosen ? chosen.city : city.trim();
+    const shipLine = chosen ? chosen.address_line : address.trim();
+    if (!shipName || !/^9\d{9}$/.test(shipPhone) || !shipLine) {
       setError(t("checkout.invalid"));
       return;
     }
@@ -52,7 +90,7 @@ export default function KitDetail() {
         {
           kit_id: kit.id,
           payment_method: pay,
-          shipping_address: { name: name.trim(), phone: phone.trim(), city: city.trim(), address_line: address.trim() },
+          shipping_address: { name: shipName, phone: shipPhone, city: shipCity, address_line: shipLine },
         },
         crypto.randomUUID(),
       );
@@ -69,6 +107,9 @@ export default function KitDetail() {
     setCheckoutOpen(false);
     setOrderId(null);
     setError(null);
+    setSavedAddresses([]);
+    setSelectedAddrId(null);
+    setUseNew(true);
   }
 
   if (loading) return <Loading />;
@@ -199,13 +240,66 @@ export default function KitDetail() {
               <h2>{t("checkout.title")}</h2>
               <p className="muted">{kit.name} — <b>NPR {kit.total_npr}</b></p>
               {error && <ErrorCard message={error} />}
-              <label className="fl" htmlFor="co-name">{t("checkout.name")}</label>
-              <input id="co-name" type="text" placeholder={t("checkout.namePh")} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-              <label className="fl" htmlFor="co-phone">{t("checkout.phone")}</label>
-              <input id="co-phone" type="tel" inputMode="numeric" placeholder={t("login.phonePlaceholder")} value={phone} maxLength={10} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} autoComplete="tel" />
-              <label className="fl" htmlFor="co-city">{t("checkout.address")}</label>
-              <input id="co-city" type="text" placeholder={t("checkout.addressPh")} value={city} onChange={(e) => setCity(e.target.value)} />
-              <input type="text" placeholder={t("checkout.addressPh")} value={address} onChange={(e) => setAddress(e.target.value)} aria-label={t("checkout.address")} />
+
+              {/* P10: saved addresses — pick one instead of retyping. */}
+              {addrLoading && <p className="muted tiny">{t("common.loading")}</p>}
+              {!addrLoading && savedAddresses.length > 0 && (
+                <>
+                  <label className="fl">{t("checkout.savedAddresses")}</label>
+                  {savedAddresses.map((a) => (
+                    <label
+                      key={a.id}
+                      className="addr-card"
+                      style={{
+                        display: "flex", gap: 10, alignItems: "flex-start",
+                        borderColor: !useNew && selectedAddrId === a.id ? "var(--green)" : undefined,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="co-addr"
+                        checked={!useNew && selectedAddrId === a.id}
+                        onChange={() => { setSelectedAddrId(a.id); setUseNew(false); }}
+                        style={{ width: 22, height: 22, minHeight: 22, marginTop: 2, flex: "none" }}
+                      />
+                      <span>
+                        <b>{a.name}</b> · {a.phone}
+                        {a.is_default && <span className="chip">{t("profile.defaultAddr")}</span>}
+                        <br />
+                        <span className="tiny muted">
+                          {a.label ? `${a.label} — ` : ""}{a.address_line}, {a.city}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                  <label
+                    className="addr-card"
+                    style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}
+                  >
+                    <input
+                      type="radio"
+                      name="co-addr"
+                      checked={useNew}
+                      onChange={() => setUseNew(true)}
+                      style={{ width: 22, height: 22, minHeight: 22, flex: "none" }}
+                    />
+                    <span><b>{t("checkout.useNewAddress")}</b></span>
+                  </label>
+                </>
+              )}
+
+              {(useNew || savedAddresses.length === 0) && (
+                <>
+                  <label className="fl" htmlFor="co-name">{t("checkout.name")}</label>
+                  <input id="co-name" type="text" placeholder={t("checkout.namePh")} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                  <label className="fl" htmlFor="co-phone">{t("checkout.phone")}</label>
+                  <input id="co-phone" type="tel" inputMode="numeric" placeholder={t("login.phonePlaceholder")} value={phone} maxLength={10} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} autoComplete="tel" />
+                  <label className="fl" htmlFor="co-city">{t("checkout.address")}</label>
+                  <input id="co-city" type="text" placeholder={t("checkout.addressPh")} value={city} onChange={(e) => setCity(e.target.value)} />
+                  <input type="text" placeholder={t("checkout.addressPh")} value={address} onChange={(e) => setAddress(e.target.value)} aria-label={t("checkout.address")} />
+                </>
+              )}
               <label className="fl" htmlFor="co-pay">{t("checkout.paymentMethod")}</label>
               <select id="co-pay" value={pay} onChange={(e) => setPay(e.target.value as PayMethod)}>
                 <option value="cod">{t("checkout.cod")}</option>

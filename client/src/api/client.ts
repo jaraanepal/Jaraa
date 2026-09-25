@@ -17,6 +17,7 @@ import type {
   AdminUser,
   AdminUserListResponse,
   AssignedCustomer,
+  AppNotification,
   AuditListResponse,
   Case,
   CaseListResponse,
@@ -310,6 +311,8 @@ export const doctorApi = {
     return request<CaseListResponse>(`/doctor/cases?${q}`);
   },
   claimCase: (id: string) => request<Case>(`/doctor/cases/${id}/claim`, { method: "POST", body: json({}) }),
+  /** Single case by id — works for every status (queued, in_review, reviewed, needs_info). */
+  getCase: (id: string) => request<Case>(`/doctor/cases/${encodeURIComponent(id)}`),
   annotatePhoto: (caseId: string, photo_id: string, shape: AnnotationShape, note: string) =>
     request<Annotation>(`/doctor/cases/${caseId}/annotations`, {
       method: "POST",
@@ -324,6 +327,7 @@ export const doctorApi = {
         title_en: string;
         detail?: string;
         product_id?: string;
+        kit_id?: string;
         sort_order: number;
       }>;
       review_notes?: string;
@@ -497,6 +501,20 @@ export const coachApi = {
   /** Rule-based nudges for one customer (contract: ?user_id required for coach). */
   getNudges: (userId: string) =>
     request<{ nudges: Nudge[] }>(`/coach/nudges?user_id=${encodeURIComponent(userId)}`),
+};
+
+/* ---------------------------------- notifications --- */
+export const notificationsApi = {
+  /** Own inbox, newest first. */
+  list: (limit = 20, offset = 0) =>
+    request<{ notifications: AppNotification[]; unread_count: number }>(
+      `/notifications?limit=${limit}&offset=${offset}`
+    ),
+  /** Mark one notification as read. */
+  markRead: (id: string) =>
+    request<{ notification: AppNotification }>(`/notifications/${encodeURIComponent(id)}/read`, {
+      method: "PATCH",
+    }),
 };
 
 export type { RedFlagType, Address };

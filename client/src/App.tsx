@@ -26,6 +26,7 @@ const Kits = lazy(() => import("./pages/Kits"));
 const KitDetail = lazy(() => import("./pages/KitDetail"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Teleconsult = lazy(() => import("./pages/Teleconsult"));
+const Notifications = lazy(() => import("./pages/Notifications"));
 const DoctorDashboard = lazy(() => import("./pages/doctor/DoctorDashboard"));
 const DoctorCase = lazy(() => import("./pages/doctor/DoctorCase"));
 const Admin = lazy(() => import("./pages/Admin"));
@@ -102,6 +103,7 @@ export default function App() {
                   <Route path="/kits/:id" element={<Guard><KitDetail /></Guard>} />
                   <Route path="/orders" element={<Guard><Orders /></Guard>} />
                   <Route path="/teleconsult" element={<Guard><Teleconsult /></Guard>} />
+                  <Route path="/notifications" element={<Guard><Notifications /></Guard>} />
 
                   {/* Role consoles */}
                   <Route path="/doctor" element={<Guard><DoctorDashboard /></Guard>} />

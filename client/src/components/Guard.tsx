@@ -32,6 +32,14 @@ export function Guard({ children }: { children: JSX.Element }) {
   const guestPass = draftHasProgress(loadDraft()) || isGuest;
   const access = checkAccess({ isAuthed, role }, path, guestPass);
 
+  // P-4: "/" is the home page for every role. A signed-in non-customer
+  // (doctor, admin, pharmacy, coach) landing on "/" goes straight to
+  // their own dashboard instead of the role-mismatch screen. Guests and
+  // customers keep the existing Home page.
+  if (path === "/" && isAuthed && role && role !== "customer") {
+    return <Navigate to={dashboardPathFor(role)} replace />;
+  }
+
   if (access === "login") {
     const loginPath = loginPathFor(path);
     return <Navigate to={`${loginPath}?returnTo=${encodeURIComponent(path)}`} replace />;

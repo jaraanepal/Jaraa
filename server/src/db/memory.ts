@@ -6,7 +6,7 @@ import type {
   User, Role, Profile, Consent, OtpRow, Scan, TimelineEvent, Photo, PhotoAngle,
   RootScoreRow, RedFlag, ScanRule, Case, Annotation, Plan, PlanItemInput, PlanItem,
   Product, Kit, Order, Payment, Consult, Checkin, FeatureFlag, AuditEntry,
-  RefreshToken, PasswordResetRow, DeletionRequest, AnalyticsSnapshot,
+  RefreshToken, PasswordResetRow, DeletionRequest, AnalyticsSnapshot, AppNotification,
 } from "./types";
 
 const now = () => new Date().toISOString();
@@ -258,7 +258,7 @@ export class MemoryStore implements Store {
     const items: PlanItem[] = p.items.map((it, i) => ({
       id: randomUUID(), plan_id: "", kind: it.kind,
       title_ne: it.title_ne ?? null, title_en: it.title_en ?? null,
-      detail: { text: it.detail ?? null, product_id: it.product_id ?? null },
+      detail: { text: it.detail ?? null, product_id: it.product_id ?? null, kit_id: it.kit_id ?? null },
       sort: it.sort_order ?? i,
     }));
     const plan: Plan & { user_id?: string } = {
@@ -471,6 +471,35 @@ export class MemoryStore implements Store {
     const row: DeletionRequest = { id: randomUUID(), ...r, status: "scheduled", created_at: now() };
     this.deletions.set(row.id, row);
     return row;
+  }
+
+  // ---- notifications (P-6) ----
+  private notifications = new Map<string, AppNotification>();
+
+  async createNotification(n: { user_id: string; type: string; title_en: string; title_ne?: string | null; body_en?: string | null; body_ne?: string | null; link?: string | null }) {
+    const row: AppNotification = {
+      id: randomUUID(), user_id: n.user_id, type: n.type,
+      title_en: n.title_en, title_ne: n.title_ne ?? null,
+      body_en: n.body_en ?? null, body_ne: n.body_ne ?? null,
+      link: n.link ?? null, read_at: null, created_at: now(),
+    };
+    this.notifications.set(row.id, row);
+    return row;
+  }
+
+  async listNotifications(userId: string, opts: { limit: number; offset: number }) {
+    const rows = [...this.notifications.values()]
+      .filter((n) => n.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const unreadCount = rows.filter((n) => !n.read_at).length;
+    return { notifications: rows.slice(opts.offset, opts.offset + opts.limit), unreadCount };
+  }
+
+  async markNotificationRead(id: string, userId: string) {
+    const n = this.notifications.get(id);
+    if (!n || n.user_id !== userId) return null;
+    if (!n.read_at) { n.read_at = now(); this.notifications.set(id, n); }
+    return n;
   }
 
   // ---- analytics ----

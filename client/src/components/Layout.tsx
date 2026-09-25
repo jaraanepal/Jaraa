@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useFlags } from "../auth/FlagsContext";
 import { Icon } from "./icons";
 import { Modal, ToastHost } from "./ui";
+import NotifBell from "./NotifBell";
 
 function EscapeHatch() {
   const { t } = useLang();
@@ -312,6 +313,7 @@ export default function Layout() {
           </div>
         </Link>
         <LanguageToggle />
+        {isAuthed && !hideChrome && <NotifBell />}
         {isAuthed && !hideChrome && (
           <button
             onClick={async () => {

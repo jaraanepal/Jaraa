@@ -283,7 +283,7 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     const items = p.items.map((it, i) => ({
       plan_id: plan.id, kind: it.kind, title_ne: it.title_ne ?? null, title_en: it.title_en ?? null,
-      detail: { text: it.detail ?? null, product_id: it.product_id ?? null }, sort: it.sort_order ?? i,
+      detail: { text: it.detail ?? null, product_id: it.product_id ?? null, kit_id: it.kit_id ?? null }, sort: it.sort_order ?? i,
     }));
     const { data: savedItems, error: e2 } = await this.sb.from("plan_items").insert(items).select();
     if (e2) throw e2;
@@ -538,6 +538,39 @@ export class SupabaseStore implements Store {
   // ---- deletion requests ----
   async createDeletionRequest(r: { user_id: string; scheduled_for: string; note: string }) {
     const { data, error } = await this.sb.from("deletion_requests").insert(r).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  // ---- notifications (P-6) ----
+  async createNotification(n: { user_id: string; type: string; title_en: string; title_ne?: string | null; body_en?: string | null; body_ne?: string | null; link?: string | null }) {
+    const { data, error } = await this.sb.from("notifications").insert({
+      user_id: n.user_id, type: n.type, title_en: n.title_en,
+      title_ne: n.title_ne ?? null, body_en: n.body_en ?? null, body_ne: n.body_ne ?? null,
+      link: n.link ?? null,
+    }).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async listNotifications(userId: string, opts: { limit: number; offset: number }) {
+    const { data, error } = await this.sb.from("notifications")
+      .select("*").eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .range(opts.offset, opts.offset + opts.limit - 1);
+    if (error) throw error;
+    const { count, error: e2 } = await this.sb.from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId).is("read_at", null);
+    if (e2) throw e2;
+    return { notifications: data ?? [], unreadCount: count ?? 0 };
+  }
+
+  async markNotificationRead(id: string, userId: string) {
+    const { data, error } = await this.sb.from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", id).eq("user_id", userId)
+      .select().maybeSingle();
     if (error) throw error;
     return data;
   }
