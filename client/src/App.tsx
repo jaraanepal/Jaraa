@@ -1,11 +1,12 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LanguageProvider } from "./i18n/LanguageContext";
-import { AuthProvider } from "./auth/AuthContext";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { FlagsProvider } from "./auth/FlagsContext";
 import Layout from "./components/Layout";
 import { ForbiddenPage, Guard, NotFoundPage } from "./components/Guard";
 import { Loading } from "./components/ui";
+import Splash from "./components/Splash";
 import { draftHasProgress, loadDraft } from "./lib/draft";
 import Home from "./pages/Home";
 
@@ -22,6 +23,7 @@ const SubmitScan = lazy(() => import("./pages/scan/SubmitScan"));
 const Plan = lazy(() => import("./pages/Plan"));
 const Progress = lazy(() => import("./pages/Progress"));
 const Kits = lazy(() => import("./pages/Kits"));
+const KitDetail = lazy(() => import("./pages/KitDetail"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Teleconsult = lazy(() => import("./pages/Teleconsult"));
 const DoctorDashboard = lazy(() => import("./pages/doctor/DoctorDashboard"));
@@ -47,6 +49,18 @@ function ScanStart() {
 }
 
 /**
+ * Cold-start splash. Shows once per app launch — App mounts exactly once
+ * per page load, so this never re-triggers on in-app navigation. Dismisses
+ * when the auth restore finishes (>=1.8s shown, hard cap ~3s).
+ */
+function ColdStartSplash() {
+  const { authReady } = useAuth();
+  const [done, setDone] = useState(false);
+  if (done) return null;
+  return <Splash ready={authReady} onDone={() => setDone(true)} />;
+}
+
+/**
  * Route tree. Access control lives in <Guard> (lib/guards.ts), which reads
  * the JWT role and the guest-draft state; Layout renders the app chrome
  * (topbar, escape hatch, bottom nav) around every page via <Outlet/>.
@@ -57,6 +71,7 @@ export default function App() {
       <AuthProvider>
         <FlagsProvider>
           <BrowserRouter>
+            <ColdStartSplash />
             <Suspense fallback={<Loading />}>
               <Routes>
                 <Route element={<Layout />}>
@@ -84,6 +99,7 @@ export default function App() {
                   <Route path="/plan" element={<Guard><Plan /></Guard>} />
                   <Route path="/progress" element={<Guard><Progress /></Guard>} />
                   <Route path="/kits" element={<Guard><Kits /></Guard>} />
+                  <Route path="/kits/:id" element={<Guard><KitDetail /></Guard>} />
                   <Route path="/orders" element={<Guard><Orders /></Guard>} />
                   <Route path="/teleconsult" element={<Guard><Teleconsult /></Guard>} />
 

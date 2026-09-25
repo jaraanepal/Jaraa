@@ -30,6 +30,7 @@ import type {
   FeatureFlagListResponse,
   FunnelAnalytics,
   KitListResponse,
+  Kit,
   KitUpsertPayload,
   Nudge,
   Order,
@@ -341,6 +342,8 @@ export const doctorApi = {
 /* --------------------------------------------------------- shop --- */
 export const shopApi = {
   listKits: (active_only = true) => request<KitListResponse>(`/kits?active_only=${active_only}`),
+  /** Full kit detail incl. images, whats_included, usage_instructions, stock. */
+  getKit: (id: string) => request<Kit>(`/kits/${encodeURIComponent(id)}`),
   createOrder: (payload: CreateOrderPayload, idempotencyKey: string) =>
     request<Order>("/orders", {
       method: "POST",

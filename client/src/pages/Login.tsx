@@ -22,6 +22,7 @@ export default function Login() {
   // Password tab
   const [identifier, setIdentifier] = useState("");
   const [pw, setPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
 
@@ -128,22 +129,39 @@ export default function Login() {
   if (tab === "otp" && step === "guardian") return <Guardian onBack={() => setStep("phone")} />;
 
   return (
-    <div className="screen">
-      <div className="center" style={{ margin: "12px 0" }}>
-        <img src="/logo.png" alt="Jaraa" style={{ width: 96, height: 96, borderRadius: 22, objectFit: "cover" }} />
+    <div className="screen login-bg">
+      <header className="login-hero rise">
+        <div className="login-hero-row">
+          <img src="/logo.png" alt="Jaraa" className="login-logo" />
+          <div>
+            <div className="login-word">{t("common.appName")}</div>
+            <div className="login-tag">{t("common.tagline")}</div>
+          </div>
+        </div>
+        <h1 className="login-title">{t("login.title")}</h1>
+        <p className="login-sub">{t("login.subtitle")}</p>
+      </header>
+
+      <div className="rise" style={{ animationDelay: "90ms" }}>
+        <GoogleButton />
       </div>
-      <h1 className="center">{t("login.title")}</h1>
-      <p className="muted center">{t("login.subtitle")}</p>
+      <div className="or-divider rise" style={{ animationDelay: "140ms" }} aria-hidden="true">
+        <span>{t("auth.orDivider")}</span>
+      </div>
 
-      <GoogleButton />
-      <div className="or-divider" aria-hidden="true"><span>{t("auth.orDivider")}</span></div>
-
-      <div className="center" style={{ display: "flex", gap: 8, justifyContent: "center", margin: "12px 0" }}>
+      <div
+        className={`seg${tab === "otp" ? " on-otp" : ""} rise`}
+        style={{ animationDelay: "190ms" }}
+        role="tablist"
+        aria-label={t("login.title")}
+      >
+        <span className="seg-ind" aria-hidden="true" />
         {(["password", "otp"] as Tab[]).map((k) => (
           <button
             key={k}
-            className={tab === k ? "btn btn-p" : "btn"}
-            style={{ flex: 1, maxWidth: 200 }}
+            role="tab"
+            aria-selected={tab === k}
+            className={tab === k ? "on" : ""}
             onClick={() => { setTab(k); setPwError(null); setError(null); }}
           >
             {t(k === "password" ? "auth.passwordTab" : "auth.otpTab")}
@@ -152,30 +170,45 @@ export default function Login() {
       </div>
 
       {tab === "password" && (
-        <div>
+        <div className="rise" style={{ animationDelay: "240ms" }}>
           {pwError && <ErrorCard message={pwError} />}
-          <div className="card">
+          <div className="card login-card">
             <label className="fl" htmlFor="ident">{t("auth.identifierLabel")}</label>
-            <input
-              id="ident"
-              type="text"
-              inputMode="email"
-              placeholder={t("auth.identifierPh")}
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              autoComplete="username"
-              autoFocus
-            />
+            <div className={`field${pwError ? " field-error" : ""}`}>
+              <Icon.user size={18} />
+              <input
+                id="ident"
+                type="text"
+                inputMode="email"
+                placeholder={t("auth.identifierPh")}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                autoComplete="username"
+                autoFocus
+              />
+            </div>
             <label className="fl" htmlFor="pwlogin">{t("auth.passwordLabel")}</label>
-            <input
-              id="pwlogin"
-              type="password"
-              placeholder={t("auth.passwordPh")}
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              autoComplete="current-password"
-              onKeyDown={(e) => { if (e.key === "Enter") signInWithPassword(); }}
-            />
+            <div className={`field${pwError ? " field-error" : ""}`}>
+              <Icon.lock size={18} />
+              <input
+                id="pwlogin"
+                type={showPw ? "text" : "password"}
+                placeholder={t("auth.passwordPh")}
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                autoComplete="current-password"
+                onKeyDown={(e) => { if (e.key === "Enter") signInWithPassword(); }}
+              />
+              <button
+                type="button"
+                className="pw-toggle"
+                aria-label={t(showPw ? "auth.hidePassword" : "auth.showPassword")}
+                aria-pressed={showPw}
+                onClick={() => setShowPw((v) => !v)}
+              >
+                {showPw ? <Icon.eyeOff size={18} /> : <Icon.eye size={18} />}
+              </button>
+            </div>
             <button className="btn btn-p" onClick={signInWithPassword} disabled={pwBusy}>
               {pwBusy ? t("auth.signingIn") : t("auth.signIn")}
             </button>
@@ -193,21 +226,24 @@ export default function Login() {
       )}
 
       {tab === "otp" && (
-        <div>
+        <div className="rise" style={{ animationDelay: "240ms" }}>
           {error && <ErrorCard message={error} />}
           {step === "phone" && (
-            <div className="card">
+            <div className="card login-card">
               <label className="fl" htmlFor="ph">{t("login.phoneLabel")}</label>
-              <input
-                id="ph"
-                type="tel"
-                inputMode="numeric"
-                placeholder={t("login.phonePlaceholder")}
-                value={phone}
-                maxLength={10}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                autoComplete="tel"
-              />
+              <div className={`field${error ? " field-error" : ""}`}>
+                <Icon.phone size={18} />
+                <input
+                  id="ph"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder={t("login.phonePlaceholder")}
+                  value={phone}
+                  maxLength={10}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                  autoComplete="tel"
+                />
+              </div>
               <label className="fl" htmlFor="ageb">{t("login.ageLabel")}</label>
               <select id="ageb" value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
                 <option value="">—</option>
@@ -229,18 +265,21 @@ export default function Login() {
           )}
 
           {step === "otp" && (
-            <div className="card">
+            <div className="card login-card">
               <label className="fl" htmlFor="otp">{t("login.otpLabel")}</label>
-              <input
-                id="otp"
-                type="tel"
-                inputMode="numeric"
-                placeholder={t("login.otpPlaceholder")}
-                value={code}
-                maxLength={6}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                autoComplete="one-time-code"
-              />
+              <div className={`field${error ? " field-error" : ""}`}>
+                <Icon.lock size={18} />
+                <input
+                  id="otp"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder={t("login.otpPlaceholder")}
+                  value={code}
+                  maxLength={6}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  autoComplete="one-time-code"
+                />
+              </div>
               <p className="tiny muted">{t("login.otpHint")}</p>
               {devCode && (
                 <p className="tiny">
@@ -258,11 +297,13 @@ export default function Login() {
         </div>
       )}
 
-      <p className="tiny muted center">{t("auth.guestNote")}</p>
-      <div className="center">
-        <button className="linklike" onClick={guest}>
-          {t("login.continueAsGuest")}
-        </button>
+      <div className="login-foot rise" style={{ animationDelay: "300ms" }}>
+        <p className="tiny muted center">{t("auth.guestNote")}</p>
+        <div className="center">
+          <button className="linklike" onClick={guest}>
+            {t("login.continueAsGuest")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -273,9 +314,18 @@ function Guardian({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const [checked, setChecked] = useState(false);
   return (
-    <div className="screen">
-      <h1>{t("login.guardianTitle")}</h1>
-      <div className="card">
+    <div className="screen login-bg">
+      <header className="login-hero rise">
+        <div className="login-hero-row">
+          <img src="/logo.png" alt="Jaraa" className="login-logo" />
+          <div>
+            <div className="login-word">{t("common.appName")}</div>
+            <div className="login-tag">{t("common.tagline")}</div>
+          </div>
+        </div>
+        <h1 className="login-title">{t("login.guardianTitle")}</h1>
+      </header>
+      <div className="card login-card rise" style={{ animationDelay: "120ms" }}>
         <p>{t("login.guardianBody")}</p>
         <label className="rowflex" style={{ margin: "12px 0", alignItems: "flex-start" }}>
           <input

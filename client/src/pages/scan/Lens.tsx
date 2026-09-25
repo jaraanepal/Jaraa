@@ -144,6 +144,16 @@ export default function Lens() {
     try {
       const c = await meApi.recordConsent("photo", CONSENT_VERSION, true);
       updateDraft({ consentPhoto: true, consentId: c.id });
+      // The server's submit check requires BOTH "photo" and "data" consent.
+      // Record "data" consent here too — the user is consenting to their
+      // scan data being processed for the dermatologist review.
+      try {
+        await meApi.recordConsent("data", CONSENT_VERSION, true);
+      } catch (e) {
+        // 409 = already recorded -> fine, ignore. Other errors shouldn't
+        // block the photo consent that just succeeded.
+        if ((e as { code?: string })?.code !== "conflict") throw e;
+      }
     } catch (e) {
       // 409 = identical consent already recorded -> treat as granted.
       if ((e as { code?: string })?.code === "conflict") {

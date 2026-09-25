@@ -317,6 +317,12 @@ export interface Kit {
   description?: string | null;
   total_npr: number;
   is_active: boolean;
+  /** Public image URLs (from GET /kits and GET /kits/:id). */
+  images?: string[];
+  whats_included?: string | null;
+  usage_instructions?: string | null;
+  category?: string | null;
+  stock?: number;
   products: Product[];
 }
 

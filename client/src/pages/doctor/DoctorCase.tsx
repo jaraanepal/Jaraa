@@ -12,6 +12,8 @@ interface ComposerItem {
   detail: string;
 }
 
+const NOTE_TEMPLATES = ["tplShedding", "tplScalp", "tplNutrition", "tplStress", "tplWatch"] as const;
+
 export default function DoctorCase() {
   const { id } = useParams<{ id: string }>();
   const { t, lang } = useLang();
@@ -79,6 +81,12 @@ export default function DoctorCase() {
 
   function toggleResolve(flagId: string) {
     setResolveIds((v) => (v.includes(flagId) ? v.filter((x) => x !== flagId) : [...v, flagId]));
+  }
+
+  /** One-tap note templates: insert into the review notes, editable before approving. */
+  function insertTemplate(key: (typeof NOTE_TEMPLATES)[number]) {
+    const text = t(`doctor.${key}Text`);
+    setReviewNotes((v) => (v.trim() ? `${v.trimEnd()}\n\n${text}` : text));
   }
 
   async function composeAndApprove() {
@@ -264,6 +272,23 @@ export default function DoctorCase() {
           + {t(`plan.itemKinds.habit`)}
         </button>
         <label className="fl" htmlFor="revnotes">{t("plan.reviewNotes")}</label>
+        <div style={{ margin: "2px 0 8px" }}>
+          <span className="tiny muted">{t("doctor.templates")}</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
+            {NOTE_TEMPLATES.map((k) => (
+              <button
+                key={k}
+                type="button"
+                className="chip"
+                style={{ cursor: "pointer", border: "1px solid var(--line)" }}
+                onClick={() => insertTemplate(k)}
+              >
+                {t(`doctor.${k}Label`)}
+              </button>
+            ))}
+          </div>
+          <p className="tiny muted" style={{ margin: 0 }}>{t("doctor.templatesHint")}</p>
+        </div>
         <textarea id="revnotes" rows={3} placeholder={t("doctor.reviewNotesPh")} value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} />
         <label className="fl" htmlFor="rescan">{t("doctor.rescanDate")}</label>
         <input id="rescan" type="date" value={rescanDue} onChange={(e) => setRescanDue(e.target.value)} />
