@@ -29,15 +29,38 @@ const Teleconsult = lazy(() => import("./pages/Teleconsult"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const DoctorDashboard = lazy(() => import("./pages/doctor/DoctorDashboard"));
 const DoctorCase = lazy(() => import("./pages/doctor/DoctorCase"));
+const DoctorFollowups = lazy(() => import("./pages/doctor/DoctorFollowups"));
+const DoctorAvailability = lazy(() => import("./pages/doctor/DoctorAvailability"));
+const DoctorTools = lazy(() => import("./pages/doctor/DoctorTools"));
+const AdminTools = lazy(() => import("./pages/admin/AdminTools"));
+const PharmacyTools = lazy(() => import("./pages/pharmacy/PharmacyTools"));
+const CoachTools = lazy(() => import("./pages/coach/CoachTools"));
 const Admin = lazy(() => import("./pages/Admin"));
 const AdminKits = lazy(() => import("./pages/admin/AdminKits"));
 const AdminOrders = lazy(() => import("./pages/admin/AdminOrders"));
+const AdminPayouts = lazy(() => import("./pages/admin/AdminPayouts"));
+const AdminPlanTemplates = lazy(() => import("./pages/admin/AdminPlanTemplates"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminFlags = lazy(() => import("./pages/admin/AdminFlags"));
 const AdminAudit = lazy(() => import("./pages/admin/AdminAudit"));
+const AdminBroadcast = lazy(() => import("./pages/admin/AdminBroadcast"));
+const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
+const AdminSla = lazy(() => import("./pages/admin/AdminSla"));
+const AdminVerifications = lazy(() => import("./pages/admin/AdminVerifications"));
+const AdminFinance = lazy(() => import("./pages/admin/AdminFinance"));
+const AdminTickets = lazy(() => import("./pages/admin/AdminTickets"));
+const AdminArticles = lazy(() => import("./pages/admin/AdminArticles"));
+const AdminKitAnalytics = lazy(() => import("./pages/admin/AdminKitAnalytics"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy"));
 const Coach = lazy(() => import("./pages/Coach"));
 const CoachFollowups = lazy(() => import("./pages/Coach").then((m) => ({ default: m.CoachFollowups })));
+/* P-12 customer feature pages */
+const Habits = lazy(() => import("./pages/Habits"));
+const Referral = lazy(() => import("./pages/Referral"));
+const Wishlist = lazy(() => import("./pages/Wishlist"));
+const Help = lazy(() => import("./pages/Help"));
+const MyData = lazy(() => import("./pages/MyData"));
+const MyChallenges = lazy(() => import("./pages/MyChallenges"));
 
 /**
  * Bare /scan entry: resumes the local draft scan, or sends the customer
@@ -104,23 +127,46 @@ export default function App() {
                   <Route path="/orders" element={<Guard><Orders /></Guard>} />
                   <Route path="/teleconsult" element={<Guard><Teleconsult /></Guard>} />
                   <Route path="/notifications" element={<Guard><Notifications /></Guard>} />
+                  {/* P-12 customer features */}
+                  <Route path="/habits" element={<Guard><Habits /></Guard>} />
+                  <Route path="/referral" element={<Guard><Referral /></Guard>} />
+                  <Route path="/wishlist" element={<Guard><Wishlist /></Guard>} />
+                  <Route path="/help" element={<Guard><Help /></Guard>} />
+                  <Route path="/my-data" element={<Guard><MyData /></Guard>} />
+                  <Route path="/my-challenges" element={<Guard><MyChallenges /></Guard>} />
 
                   {/* Role consoles */}
                   <Route path="/doctor" element={<Guard><DoctorDashboard /></Guard>} />
                   <Route path="/doctor/reviewed" element={<Guard><DoctorDashboard initialTab="reviewed" /></Guard>} />
                   <Route path="/doctor/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/doctor/case/:id" element={<Guard><DoctorCase /></Guard>} />
+                  <Route path="/doctor/followups" element={<Guard><DoctorFollowups /></Guard>} />
+                  <Route path="/doctor/availability" element={<Guard><DoctorAvailability /></Guard>} />
+                  <Route path="/doctor/tools" element={<Guard><DoctorTools /></Guard>} />
                   <Route path="/admin" element={<Guard><Admin /></Guard>} />
                   <Route path="/admin/kits" element={<Guard><AdminKits /></Guard>} />
                   <Route path="/admin/orders" element={<Guard><AdminOrders /></Guard>} />
+                  <Route path="/admin/payouts" element={<Guard><AdminPayouts /></Guard>} />
+                  <Route path="/admin/plan-templates" element={<Guard><AdminPlanTemplates /></Guard>} />
                   <Route path="/admin/users" element={<Guard><AdminUsers /></Guard>} />
                   <Route path="/admin/flags" element={<Guard><AdminFlags /></Guard>} />
                   <Route path="/admin/audit" element={<Guard><AdminAudit /></Guard>} />
+                  <Route path="/admin/broadcast" element={<Guard><AdminBroadcast /></Guard>} />
+                  <Route path="/admin/refunds" element={<Guard><AdminRefunds /></Guard>} />
+                  <Route path="/admin/sla" element={<Guard><AdminSla /></Guard>} />
+                  <Route path="/admin/verifications" element={<Guard><AdminVerifications /></Guard>} />
+                  <Route path="/admin/finance" element={<Guard><AdminFinance /></Guard>} />
+                  <Route path="/admin/tickets" element={<Guard><AdminTickets /></Guard>} />
+                  <Route path="/admin/articles" element={<Guard><AdminArticles /></Guard>} />
+                  <Route path="/admin/kit-analytics" element={<Guard><AdminKitAnalytics /></Guard>} />
                   <Route path="/admin/profile" element={<Guard><StaffProfile /></Guard>} />
+                  <Route path="/admin/tools" element={<Guard><AdminTools /></Guard>} />
                   <Route path="/pharmacy" element={<Guard><Pharmacy /></Guard>} />
+                  <Route path="/pharmacy/tools" element={<Guard><PharmacyTools /></Guard>} />
                   <Route path="/pharmacy/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/coach" element={<Guard><Coach /></Guard>} />
                   <Route path="/coach/followups" element={<Guard><CoachFollowups /></Guard>} />
+                  <Route path="/coach/tools" element={<Guard><CoachTools /></Guard>} />
                   <Route path="/coach/profile" element={<Guard><StaffProfile /></Guard>} />
 
                   {/* Errors */}

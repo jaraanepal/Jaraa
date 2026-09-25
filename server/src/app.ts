@@ -13,6 +13,7 @@ import { coachRoutes } from "./modules/coach/routes";
 import { adminRoutes } from "./modules/admin/routes";
 import { notificationRoutes } from "./modules/notifications/routes";
 import { errorMiddleware, notFound } from "./http";
+import { setEmailLogger } from "./lib/brevo";
 import type { Deps } from "./deps";
 
 export interface AppOptions {
@@ -21,6 +22,11 @@ export interface AppOptions {
 }
 
 export function buildApp(deps: Deps, opts: AppOptions = {}) {
+  // A37: central email logging — every Brevo send/skip/fail lands in email_logs.
+  // Fire-and-forget; a logging failure must never break the request path.
+  setEmailLogger((e) => {
+    deps.store.logEmail(e).catch((err) => console.error("[email-log] store write failed:", err));
+  });
   const app = express();
   app.set("trust proxy", 1);
   app.use(express.json({ limit: "2mb" }));

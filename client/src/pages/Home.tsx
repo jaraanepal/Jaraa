@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { meApi, scansApi } from "../api/client";
 import { useLang } from "../i18n/LanguageContext";
@@ -7,6 +7,8 @@ import { useFlags } from "../auth/FlagsContext";
 import { ErrorCard, Loading, apiErrorMessage } from "../components/ui";
 import { Icon } from "../components/icons";
 import { clearDraft, draftHasProgress, loadDraft, saveDraft } from "../lib/draft";
+import { CommunityTab } from "../components/b3customer";
+import { PriceDropCard, ReorderCard, StreakCard } from "../components/b4customer";
 
 const STAGE_KEYS = ["home.stage1", "home.stage2", "home.stage3", "home.stage4"] as const;
 const STAGE_SLUGS = ["kahani", "lens", "jara", "root_map"] as const;
@@ -35,6 +37,30 @@ export default function Home() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selStage, setSelStage] = useState<number | null>(null);
+  // Batch-3 (009): home ↔ community tab.
+  const [homeTab, setHomeTab] = useState<"home" | "community">("home");
+  // U14: water-intake widget — server-backed daily log (GET/POST /me/water).
+  // Rapid taps: the UI updates instantly via a functional setState (no stale
+  // closure), and the server sync is debounced so fast taps never drop counts.
+  const [glasses, setGlasses] = useState(0);
+  const waterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isAuthed) return;
+    meApi.getWater().then((r) => setGlasses(r.log?.glasses ?? 0)).catch(() => {});
+  }, [isAuthed]);
+  useEffect(() => () => { if (waterTimer.current) clearTimeout(waterTimer.current); }, []);
+  function bumpGlasses(delta: number) {
+    setGlasses((prev) => {
+      const next = Math.max(0, Math.min(40, prev + delta));
+      if (waterTimer.current) clearTimeout(waterTimer.current);
+      waterTimer.current = setTimeout(() => {
+        meApi.setWater(new Date().toISOString().slice(0, 10), next).catch(() => {
+          /* optimistic: keep the local count on failure */
+        });
+      }, 600);
+      return next;
+    });
+  }
 
   // Role landing: non-customers go to their own consoles.
   useEffect(() => {
@@ -126,6 +152,29 @@ export default function Home() {
 
       {error && <ErrorCard message={error} />}
 
+      {/* U23: home ↔ community tabs (approved tips only, disclaimer pinned) */}
+      <div className="btn-row jh-in jh-d2" role="tablist" aria-label={t("p12c.customer.u23_communityTips.title")}>
+        <button
+          role="tab" aria-selected={homeTab === "home"}
+          className={`btn btn-s ${homeTab === "home" ? "btn-p" : "btn-g"}`}
+          onClick={() => setHomeTab("home")}
+        >
+          {t("home.journey")}
+        </button>
+        <button
+          role="tab" aria-selected={homeTab === "community"}
+          className={`btn btn-s ${homeTab === "community" ? "btn-p" : "btn-g"}`}
+          onClick={() => setHomeTab("community")}
+        >
+          {t("p12c.customer.u23_communityTips.title")}
+        </button>
+      </div>
+
+      {homeTab === "community" ? (
+        <CommunityTab />
+      ) : (
+      <>
+
       {/* Interactive stage stepper */}
       <section className="jh-steps jh-in jh-d2" aria-label={t("home.stagesTitle")}>
         <h3>{t("home.stagesTitle")}</h3>
@@ -158,6 +207,43 @@ export default function Home() {
           </p>
         )}
       </section>
+
+      {/* U14: water-intake widget (client-side daily counter) */}
+      {isAuthed && (
+        <section className="card" aria-label={t("p12b.customer.water")}>
+          <div className="rowflex">
+            <div>
+              <h3 style={{ marginTop: 0 }}>{t("p12b.customer.water")}</h3>
+              <p className="muted tiny" style={{ margin: 0 }}>{t("p12b.customer.waterHint")}</p>
+            </div>
+            <span className="spacer" />
+            <div className="rowflex" style={{ gap: 8 }}>
+              <button
+                className="btn btn-s btn-g"
+                style={{ padding: "8px 14px", fontSize: 18 }}
+                disabled={glasses <= 0}
+                onClick={() => bumpGlasses(-1)}
+                aria-label={t("p12b.customer.glassMinus")}
+              >−</button>
+              <b aria-live="polite">{glasses} {t("p12b.customer.glasses")}</b>
+              <button
+                className="btn btn-s btn-p"
+                style={{ padding: "8px 14px", fontSize: 18 }}
+                disabled={glasses >= 40}
+                onClick={() => bumpGlasses(1)}
+                aria-label={t("p12b.customer.glassPlus")}
+              >+</button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* U33: price-drop alerts for wishlisted kits (batch 4) */}
+      {isAuthed && <PriceDropCard />}
+
+      {/* U31/U41: check-in streak + reorder suggestions (batch 4) */}
+      {isAuthed && <StreakCard />}
+      {isAuthed && <ReorderCard />}
 
       {/* Your journey: plan preview / review timeline / sign-in prompt */}
       {isAuthed ? (
@@ -253,6 +339,9 @@ export default function Home() {
           </span>
         </span>
       </Link>
+
+      </>
+      )}
 
       <p className="tiny muted center jh-in jh-d6">{t("home.under16")}</p>
     </div>

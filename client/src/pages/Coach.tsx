@@ -8,6 +8,9 @@ import { Icon } from "../components/icons";
 import enDict from "../i18n/en.json";
 import neDict from "../i18n/ne.json";
 import type { AssignedCustomer, Nudge } from "../api/types";
+import { CoachBatchTools } from "./coach/CoachBatch";
+import { CoachBatch4Tools } from "./coach/CoachBatch4";
+import { AvailabilityToggle } from "./coach/CoachBatch3";
 
 interface Card { title: string; body: string }
 
@@ -269,6 +272,9 @@ function CoachDashboard({ focusFollowups = false }: { focusFollowups?: boolean }
       <h1>{t("coachDash.title")}</h1>
       <p className="muted tiny">{t("coachDash.sub")}</p>
 
+      {/* Batch-3 (C26): coach availability toggle in the header area. */}
+      <AvailabilityToggle />
+
       <NoticeBox tone="notice" title="">
         <p className="tiny">{t("coach.disclaimer")}</p>
       </NoticeBox>
@@ -399,6 +405,11 @@ function CoachDashboard({ focusFollowups = false }: { focusFollowups?: boolean }
               ))}
             </>
           )}
+
+          {/* Batch-1 coaching tools: check-ins, challenges, reminders, escalations, knowledge. */}
+          {!focusFollowups && <CoachBatchTools />}
+          {/* Batch-4 coaching tools: feedback, freezes, tags, bulk nudges, handovers, milestones, tips. */}
+          {!focusFollowups && <CoachBatch4Tools />}
         </>
       )}
     </div>

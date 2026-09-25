@@ -4,6 +4,8 @@ import { meApi, shopApi } from "../api/client";
 import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, Loading, NoticeBox, apiErrorMessage } from "../components/ui";
 import { Icon } from "../components/icons";
+import { ReviewRequestPanel, RoutinesTab } from "../components/b3customer";
+import { RemindersPanel, UsageLogPanel } from "../components/b4customer";
 import type { Kit, Plan as PlanT, PlanItemKind } from "../api/types";
 
 const KIND_ICON: Record<PlanItemKind, "check" | "box" | "video" | "doc"> = {
@@ -20,8 +22,21 @@ export default function Plan() {
   const [error, setError] = useState<string | null>(null);
   // P-8: prescribed kits resolved to full kit details.
   const [prescribedKits, setPrescribedKits] = useState<Kit[]>([]);
+  // U1: rescan due date drives the reminder card at the top.
+  const [rescanDue, setRescanDue] = useState<string | null>(null);
+  // U12: past approved plan versions.
+  const [history, setHistory] = useState<PlanT[]>([]);
+  const [histId, setHistId] = useState<string>("");
+  // Batch-3 (009): plan vs routine-library tab.
+  const [b3Tab, setB3Tab] = useState<"plan" | "routines">("plan");
 
   useEffect(() => {
+    // U1: next_rescan_due_on lives on the progress bundle.
+    meApi.getProgress().then(
+      (p) => setRescanDue(p.next_rescan_due_on ?? null),
+      () => setRescanDue(null),
+    );
+    meApi.planHistory().then((r) => setHistory(r.plans)).catch(() => setHistory([]));
     meApi
       .getPlan()
       .then((p) => {
@@ -50,11 +65,85 @@ export default function Plan() {
   if (loading) return <Loading />;
 
   const empty = !plan || plan.status !== "approved";
+  const shownPlan = histId ? history.find((h) => h.id === histId) ?? plan : plan;
+
+  // U1: rescan reminder — overdue (past due date, red) or due within 7 days (amber).
+  let rescanState: "overdue" | "due" | null = null;
+  let rescanDays = 0;
+  if (rescanDue) {
+    const due = new Date(rescanDue.slice(0, 10));
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    rescanDays = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+    if (rescanDays < 0) rescanState = "overdue";
+    else if (rescanDays <= 7) rescanState = "due";
+  }
 
   return (
     <div className="screen">
       <h1>{t("plan.title")}</h1>
       {error && <ErrorCard message={error} />}
+
+      {/* U1: rescan reminder card */}
+      {rescanState && (
+        <div
+          className="card"
+          style={{
+            border: `2px solid ${rescanState === "overdue" ? "var(--bad)" : "var(--gold)"}`,
+            borderRadius: 12,
+          }}
+        >
+          <div className="rowflex">
+            <span style={{ color: rescanState === "overdue" ? "var(--bad)" : "var(--gold)" }}>
+              <Icon.clock size={24} />
+            </span>
+            <div>
+              <b>{rescanState === "overdue" ? t("p12.customer.rescanOverdue") : t("p12.customer.rescanDue")}</b>
+              <br />
+              <span className="tiny muted">{rescanDue?.slice(0, 10)}</span>
+            </div>
+            <span className="spacer" />
+            <Link className="btn btn-p btn-s" to="/scan" style={{ textDecoration: "none" }}>
+              {t("p12.customer.rescanCta")}
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* U12: plan version history */}
+      {history.length > 1 && (
+        <div className="rowflex" style={{ margin: "8px 0" }}>
+          <label className="tiny muted" htmlFor="planver">{t("p12b.customer.planVersion")}</label>
+          <select id="planver" value={histId} onChange={(e) => setHistId(e.target.value)}>
+            <option value="">{t("p12b.customer.currentPlan")}</option>
+            {history.map((h) => (
+              <option key={h.id} value={h.id}>{h.created_at.slice(0, 10)}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* U22/U29: plan ↔ routine-library tabs */}
+      <div className="btn-row" role="tablist" aria-label={t("plan.title")}>
+        <button
+          role="tab" aria-selected={b3Tab === "plan"}
+          className={`btn btn-s ${b3Tab === "plan" ? "btn-p" : "btn-g"}`}
+          onClick={() => setB3Tab("plan")}
+        >
+          {t("plan.title")}
+        </button>
+        <button
+          role="tab" aria-selected={b3Tab === "routines"}
+          className={`btn btn-s ${b3Tab === "routines" ? "btn-p" : "btn-g"}`}
+          onClick={() => setB3Tab("routines")}
+        >
+          {t("p12c.customer.u29_routines.title")}
+        </button>
+      </div>
+
+      {b3Tab === "routines" ? (
+        <RoutinesTab />
+      ) : (
+        <>
 
       {empty && !error && (
         <div className="card center">
@@ -63,16 +152,16 @@ export default function Plan() {
         </div>
       )}
 
-      {!empty && plan && (
+      {!empty && shownPlan && (
         <>
-          {plan.review_notes && (
+          {shownPlan.review_notes && (
             <NoticeBox tone="ok" title={t("plan.reviewNotes")}>
-              <p>{plan.review_notes}</p>
+              <p>{shownPlan.review_notes}</p>
             </NoticeBox>
           )}
 
           {(["habit", "product", "consult", "referral"] as PlanItemKind[]).map((kind) => {
-            const items = plan.items.filter((i) => i.kind === kind);
+            const items = shownPlan.items.filter((i) => i.kind === kind);
             if (!items.length) return null;
             return (
               <div className="card" key={kind}>
@@ -92,9 +181,9 @@ export default function Plan() {
             );
           })}
 
-          {plan.rescan_due_on && (
+          {shownPlan.rescan_due_on && (
             <p className="tiny muted">
-              {t("plan.rescanDue")} {plan.rescan_due_on.slice(0, 10)}
+              {t("plan.rescanDue")} {shownPlan.rescan_due_on.slice(0, 10)}
             </p>
           )}
 
@@ -134,6 +223,15 @@ export default function Plan() {
           <Link className="btn btn-p" to="/kits" style={{ textDecoration: "none", textAlign: "center" }}>
             {t("plan.kitCta")}
           </Link>
+
+          {/* U22: appointment-free follow-up review request */}
+          <ReviewRequestPanel />
+        </>
+      )}
+
+      {/* U40: kit reminders + U42: product usage log (batch 4) — plan-independent */}
+      <RemindersPanel />
+      <UsageLogPanel />
         </>
       )}
     </div>

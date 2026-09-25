@@ -12,6 +12,8 @@ export interface User {
   id: string; phone: string; email: string | null; role: Role; language: string;
   is_active: boolean; password_hash: string | null; totp_secret: string | null;
   created_at: string; updated_at: string;
+  /** Opted into the coach streak leaderboard (009, C19). */
+  leaderboard_opt_in: boolean;
 }
 
 export interface Profile {
@@ -22,6 +24,8 @@ export interface Profile {
   photo_path: string | null;
   /** Order addresses, managed by the user (JSON array on the profile row). */
   addresses: Address[];
+  /** Saved courier note prefilled at checkout (008, U19). */
+  delivery_instructions: string | null;
   created_at: string; updated_at: string;
 }
 
@@ -77,6 +81,8 @@ export interface Case {
   id: string; scan_id: string; assigned_doctor_id: string | null;
   priority: number; sla_due_at: string | null; status: CaseStatus;
   created_at: string; updated_at: string;
+  /** Archived out of the active queue (009, D20). */
+  archived_at: string | null;
 }
 
 export interface Annotation {
@@ -116,13 +122,33 @@ export interface Kit {
   /** Units on hand; >= 0. */
   stock: number;
   created_at: string; updated_at: string;
+  /** Low-stock alert threshold (009, P26). */
+  low_stock_threshold: number;
 }
 
 export interface Order {
   id: string; order_no: string; user_id: string; kit_id: string | null;
   status: OrderStatus; subtotal_npr: number; shipping_npr: number; total_npr: number;
   payment_method: string | null; idempotency_key: string; fulfilment_note: string | null;
+  /** Courier delivery note set at checkout (008, U19). */
+  delivery_instructions: string | null;
+  /** Coupon applied at checkout (008, A16 — cosmetic kits only). */
+  coupon_code: string | null;
+  /** Discount in NPR from the coupon (008, A16). */
+  discount_npr: number;
+  /** Courier assigned by pharmacy (007, P4). */
+  courier_name: string | null;
+  /** Courier tracking ID (007, P4). */
+  tracking_id: string | null;
   shipping_address: Record<string, unknown>; created_at: string; updated_at: string;
+  /** Gift order (009, U26). */
+  is_gift: boolean;
+  gift_recipient_name: string | null;
+  gift_recipient_phone: string | null;
+  gift_message: string | null;
+  /** Pick/pack timer (009, P23). */
+  pack_started_at: string | null;
+  pack_completed_at: string | null;
 }
 
 export interface Payment {
@@ -146,7 +172,7 @@ export interface FeatureFlag { key: string; is_enabled: boolean; updated_by: str
 
 export interface AuditEntry {
   id: string | number; actor_id: string | null; action: string; entity: string;
-  entity_id: string | null; at: string; ip: string | null;
+  entity_id: string | null; at: string; ip: string | null; detail: string | null;
 }
 
 export interface RefreshToken { token_hash: string; user_id: string; expires_at: string; created_at: string; }
@@ -172,4 +198,541 @@ export interface AppNotification {
   title_en: string; title_ne: string | null;
   body_en: string | null; body_ne: string | null;
   link: string | null; read_at: string | null; created_at: string;
+}
+
+/* ---------------- P-12 dashboard features (007_dashboard_features.sql) --- */
+
+export interface FollowUp {
+  id: string; case_id: string; doctor_id: string; due_on: string;
+  note: string | null; done_at: string | null; created_at: string;
+}
+
+export type DoctorAvailabilityStatus = "available" | "on_leave";
+export interface DoctorAvailability {
+  doctor_id: string; status: DoctorAvailabilityStatus; note: string | null; updated_at: string;
+}
+
+export interface Refund {
+  id: string; order_id: string; amount_npr: number; reason: string | null;
+  created_by: string | null; created_at: string;
+}
+
+export type StaffVerificationStatus = "pending" | "approved" | "rejected";
+export interface StaffVerification {
+  id: string; user_id: string; requested_role: string; status: StaffVerificationStatus;
+  decided_by: string | null; decided_at: string | null; note: string | null; created_at: string;
+}
+
+export type TicketStatus = "open" | "answered" | "closed";
+export interface SupportTicket {
+  id: string; user_id: string; subject: string; status: TicketStatus;
+  created_at: string; updated_at: string;
+}
+export interface TicketReply {
+  id: string; ticket_id: string; author_id: string | null; author_role: string;
+  body: string; created_at: string;
+}
+
+export interface EducationArticle {
+  id: string; title_en: string; title_ne: string | null;
+  body_en: string; body_ne: string | null; is_published: boolean;
+  created_by: string | null; created_at: string; updated_at: string;
+}
+
+export type OrderCheckType = "name" | "phone" | "address";
+export interface OrderCheck {
+  id: string; order_id: string; check_type: OrderCheckType;
+  checked_by: string | null; checked_at: string;
+}
+
+export interface DamageReport {
+  id: string; order_id: string; reporter_id: string | null;
+  description: string; created_at: string;
+}
+
+export interface HandoverNote {
+  id: string; order_id: string; author_id: string | null;
+  note: string; created_at: string;
+}
+
+export interface Challenge {
+  id: string; title_en: string; title_ne: string | null; days: 7 | 14 | 30;
+  description_en: string | null; description_ne: string | null;
+  created_by: string | null; created_at: string;
+}
+export interface ChallengeAssignment {
+  id: string; challenge_id: string; user_id: string;
+  started_at: string; completed_at: string | null;
+}
+
+export interface CoachNote {
+  id: string; coach_id: string; customer_id: string; note: string; created_at: string;
+}
+
+export type EscalationStatus = "open" | "acknowledged" | "resolved";
+export interface Escalation {
+  id: string; customer_id: string; coach_id: string; reason: string;
+  status: EscalationStatus; created_at: string;
+}
+
+export interface ScheduledNudge {
+  id: string; coach_id: string; user_id: string;
+  message_en: string; message_ne: string | null;
+  send_at: string; sent_at: string | null; created_at: string;
+  /** Recurrence for motivational scheduler (009, C21): daily | weekly | null. */
+  recurrence: string | null;
+}
+
+export interface SatisfactionRating {
+  id: string; customer_id: string; coach_id: string;
+  rating: number; comment: string | null; created_at: string;
+}
+
+export interface WishlistItem { id: string; user_id: string; kit_id: string; created_at: string; }
+
+/* ---------------- Batch 2 (008) ---------------- */
+
+export interface DoctorSnippet {
+  id: string; doctor_id: string; title: string;
+  body_en: string; body_ne: string | null; created_at: string;
+}
+
+export interface CaseBookmark { case_id: string; doctor_id: string; created_at: string; }
+
+export interface ReviewChecklist {
+  id: string; case_id: string; doctor_id: string; created_at: string;
+  items?: ReviewChecklistItem[];
+}
+export interface ReviewChecklistItem {
+  id: string; checklist_id: string; label_en: string; label_ne: string | null;
+  done: boolean; sort: number; created_at: string;
+}
+
+export interface PhotoRequest {
+  id: string; case_id: string; doctor_id: string; angles: string;
+  note: string | null; fulfilled_at: string | null; created_at: string;
+}
+
+export interface Announcement {
+  id: string; title_en: string; title_ne: string | null;
+  body_en: string | null; body_ne: string | null; link: string | null;
+  starts_at: string | null; ends_at: string | null; is_active: boolean;
+  created_by: string | null; created_at: string;
+}
+
+export interface RolePermission {
+  role: string; permission: string; granted: boolean;
+  updated_by: string | null; updated_at: string;
+}
+
+export interface LoginAttempt {
+  id: string; phone: string | null; email: string | null; success: boolean;
+  ip: string | null; user_agent: string | null; created_at: string;
+}
+
+export type CouponKind = "percent" | "fixed_npr";
+export interface Coupon {
+  id: string; code: string; kind: CouponKind; value: number;
+  max_uses: number | null; uses: number; min_order_npr: number;
+  starts_at: string | null; ends_at: string | null; is_active: boolean;
+  created_by: string | null; created_at: string;
+}
+
+export interface BackupRecord {
+  id: string; label: string; status: "ok" | "failed" | "running";
+  size_bytes: number | null; note: string | null;
+  recorded_by: string | null; created_at: string;
+}
+
+export interface NotificationTemplate {
+  id: string; name: string; title_en: string; title_ne: string | null;
+  body_en: string | null; body_ne: string | null; link: string | null;
+  created_by: string | null; created_at: string;
+}
+
+export interface StockMovement {
+  id: string; kit_id: string; delta: number; reason: string | null;
+  actor_id: string | null; created_at: string;
+}
+
+export interface PackingCheck {
+  id: string; order_id: string; step: string; done: boolean;
+  checked_by: string | null; created_at: string;
+}
+
+export interface KitBatch {
+  id: string; kit_id: string; batch_no: string; expires_on: string | null;
+  qty: number; supplier_id: string | null; created_at: string;
+}
+
+export interface Supplier {
+  id: string; name: string; contact: string | null; phone: string | null;
+  address: string | null; note: string | null; created_at: string;
+}
+
+export interface ChallengeGroup {
+  id: string; title_en: string; title_ne: string | null;
+  description_en: string | null; description_ne: string | null;
+  starts_on: string | null; ends_on: string | null;
+  created_by: string | null; created_at: string;
+  member_count?: number;
+}
+
+export interface Badge {
+  id: string; user_id: string; badge: string;
+  awarded_by: string | null; created_at: string;
+}
+
+export interface SessionSummary {
+  id: string; coach_id: string; customer_id: string;
+  summary: string; created_at: string;
+}
+
+export interface CustomerGoal {
+  id: string; coach_id: string; customer_id: string;
+  title_en: string; title_ne: string | null; target_date: string | null;
+  done_at: string | null; created_at: string;
+}
+
+export interface HabitTemplate {
+  id: string; title_en: string; title_ne: string | null;
+  description_en: string | null; description_ne: string | null;
+  created_by: string | null; created_at: string;
+}
+
+export interface NoteTemplate {
+  id: string; coach_id: string | null; title: string;
+  body_en: string; body_ne: string | null; created_at: string;
+}
+
+export interface ArticleAssignment {
+  id: string; article_id: string; user_id: string;
+  assigned_by: string | null; created_at: string;
+}
+
+export interface SymptomEntry {
+  id: string; user_id: string; entry_date: string; note: string; created_at: string;
+}
+
+export interface WaterLog { user_id: string; log_date: string; glasses: number; updated_at: string; }
+
+export interface SleepLog {
+  id: string; user_id: string; log_date: string;
+  bedtime: string | null; wake_time: string | null; quality: number | null;
+  created_at: string;
+}
+
+export interface NotificationPrefs {
+  user_id: string; plan_updates: boolean; photo_requests: boolean;
+  digest: boolean; marketing: boolean;
+  quiet_from: string | null; quiet_to: string | null; updated_at: string;
+}
+
+export interface EmergencyContact {
+  id: string; user_id: string; name: string; phone: string;
+  relation: string | null; created_at: string;
+}
+
+
+/* ---------------- Batch 3 (009) — doctor ---------------- */
+/** D22 second-opinion request (009_batch3.sql). status: pending | accepted | declined | done */
+export interface SecondOpinion {
+  id: string; case_id: string; requester_id: string; reviewer_id: string;
+  status: "pending" | "accepted" | "declined" | "done";
+  note: string | null; created_at: string; decided_at: string | null;
+}
+
+/** D24 one-tap triage preset, doctor-scoped (009_batch3.sql). */
+export interface TriagePreset {
+  id: string; doctor_id: string; name: string; priority: number; created_at: string;
+}
+
+
+/* ---------------- Batch 3 (009) — admin ---------------- */
+/* ---------------- Batch 3 (009_batch3.sql) — admin dashboard A21–A29 --- */
+
+export type DisputeStatus = "open" | "in_review" | "resolved" | "rejected";
+
+export interface Dispute {
+  id: string; order_id: string; user_id: string;
+  subject: string; body: string;
+  status: DisputeStatus;
+  resolution: string | null;
+  resolved_by: string | null;
+  created_at: string; resolved_at: string | null;
+}
+
+export type CommunityTipStatus = "pending" | "approved" | "rejected";
+
+export interface CommunityTip {
+  id: string; user_id: string;
+  title: string; body: string;
+  status: CommunityTipStatus;
+  moderated_by: string | null;
+  created_at: string;
+}
+
+export interface PlanTemplate {
+  id: string;
+  title_en: string; title_ne: string | null;
+  /** Reusable plan items (PlanItemInput shape). */
+  items: unknown[];
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ExportSchedule {
+  id: string;
+  kind: string;                 // orders
+  frequency: string;            // daily | weekly | monthly
+  is_active: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface StaffChecklist {
+  id: string; user_id: string;
+  items: { key: string; done: boolean }[];
+  updated_at: string;
+}
+
+
+/* ---------------- Batch 3 (009) — pharmacy ---------------- */
+/* ---------------- Batch 3 (009) ---------------- */
+
+/** One damaged-stock quarantine entry (009_batch3.sql: quarantine, P19). */
+export interface QuarantineEntry {
+  id: string;
+  kit_id: string;
+  qty: number;
+  reason: string | null;
+  status: "quarantined" | "released" | "written_off";
+  reported_by: string | null;
+  created_at: string;
+}
+
+/** One packaging-material stock row (009_batch3.sql: packaging_materials, P24). */
+export interface PackagingMaterial {
+  id: string;
+  name: string;
+  qty: number;
+  unit: string | null;
+  low_threshold: number;
+  updated_at: string;
+}
+
+/** One internal pharmacy note on an order (009_batch3.sql: order_notes, P27).
+ *  Distinct from handover_notes (007, shift handover). */
+export interface OrderNote {
+  id: string;
+  order_id: string;
+  author_id: string;
+  note: string;
+  created_at: string;
+}
+
+
+/* ---------------- Batch 3 (009) — coach ---------------- */
+export interface OnboardingChecklist {
+  id: string; user_id: string;
+  steps: { key: string; done: boolean }[];
+  updated_at: string;
+}
+
+export interface CoachAvailability {
+  id: string; coach_id: string;
+  status: "available" | "on_leave";
+  note: string | null;
+  updated_at: string;
+}
+
+
+/* ---------------- Batch 3 (009) — customer ---------------- */
+/** U21: case Q&A thread message. 009 table `case_messages`. */
+export interface CaseMessage {
+  id: string;
+  case_id: string;
+  author_id: string;
+  author_role: "customer" | "doctor";
+  body: string;
+  created_at: string;
+}
+
+/** U22: follow-up review request (appointment-free). 009 table `review_requests`. */
+export interface ReviewRequest {
+  id: string;
+  user_id: string;
+  case_id: string | null;
+  reason: string | null;
+  status: "pending" | "done";
+  created_at: string;
+}
+
+/** U25: one loyalty ledger row. 009 table `loyalty_points`. */
+export interface LoyaltyEntry {
+  id: string;
+  user_id: string;
+  points: number;
+  reason: string | null;
+  order_id: string | null;
+  created_at: string;
+}
+
+/** U29: medication-free routine item. 009 table `routine_library`. */
+export interface RoutineItem {
+  id: string;
+  title_en: string;
+  title_ne: string | null;
+  body_en: string;
+  body_ne: string | null;
+  category: string | null;
+  is_published: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+/* ================= BATCH 4 (010_batch4.sql) ================= */
+
+/** D32: doctor-only internal comment on a case. */
+export interface CaseComment {
+  id: string; case_id: string; doctor_id: string; body: string; created_at: string;
+}
+
+/** D33: non-diagnostic concern tag on a case. */
+export interface CaseConcernTag {
+  id: string; case_id: string; tag: string; created_at: string;
+}
+
+/** D40: saved queue filter preset, doctor-scoped. */
+export interface QueueFilter {
+  id: string; doctor_id: string; name: string; filters: Record<string, unknown>; created_at: string;
+}
+
+/** D38: past case with similar root scores (reference only). */
+export interface SimilarCase {
+  id: string; created_at: string; priority: number; status: string; distance: number;
+}
+
+/** A30: role dashboard card config. */
+export interface DashboardConfig {
+  id: string; role: string; config: Record<string, unknown>; updated_at: string;
+}
+
+/** A37: one email delivery log row. */
+export interface EmailLog {
+  id: string; to_email: string; template: string; status: "sent" | "failed";
+  error: string | null; created_at: string;
+}
+
+/** A44: internal admin notice. */
+export interface AdminNotice {
+  id: string; title_en: string; title_ne: string | null; body_en: string | null;
+  body_ne: string | null; created_at: string; read: boolean;
+}
+
+/** A45: consent text version. */
+export interface ConsentVersion {
+  id: string; kind: string; version: number; text_en: string; text_ne: string | null;
+  active: boolean; created_at: string;
+}
+
+/** P31: failed delivery attempt. */
+export interface DeliveryAttempt {
+  id: string; order_id: string; status: "failed" | "rescheduled" | "delivered";
+  note: string | null; created_at: string;
+}
+
+/** P33: physical stock count audit row. */
+export interface StockCount {
+  id: string; kit_id: string; system_qty: number; counted_qty: number; variance: number;
+  counted_by: string | null; created_at: string;
+}
+
+/** P38: kit substitution record. */
+export interface Substitution {
+  id: string; order_id: string; from_kit_id: string | null; to_kit_id: string | null;
+  reason: string; created_at: string;
+}
+
+/** P39: delivery photo proof (storage_path in existing scan-photos bucket). */
+export interface DeliveryProof {
+  id: string; order_id: string; storage_path: string; note: string | null; created_at: string;
+}
+
+/** P43: pharmacy-initiated refund request. */
+export interface RefundRequest {
+  id: string; order_id: string; reason: string; status: "pending" | "approved" | "rejected";
+  created_at: string; decided_at: string | null;
+}
+
+/** P44: non-dispatch day. */
+export interface DispatchHoliday {
+  id: string; date: string; label: string; created_at: string;
+}
+
+/** P45: courier damage claim. */
+export interface CourierClaim {
+  id: string; courier_name: string; order_id: string | null; amount_npr: number;
+  reason: string; status: "open" | "filed" | "settled"; created_at: string;
+}
+
+/** P36-alt: kit batch expiring soon. */
+export interface ExpiringBatch {
+  id: string; kit_id: string; kit_name: string; batch_no: string | null;
+  expiry: string | null; days_left: number | null; qty: number;
+}
+
+/** C29: customer feedback on their coach. */
+export interface CoachFeedback {
+  id: string; coach_id: string; customer_id: string; rating: number;
+  note: string | null; created_at: string;
+}
+
+/** C30: streak freeze for one date. */
+export interface StreakFreeze {
+  id: string; customer_id: string; coach_id: string; frozen_date: string; created_at: string;
+}
+
+/** C32: coach-defined customer tag. */
+export interface CustomerTag {
+  id: string; coach_id: string; customer_id: string; tag: string; created_at: string;
+}
+
+/** C34: handover note between coaches. */
+export interface CoachHandover {
+  id: string; customer_id: string; from_coach_id: string | null; to_coach_id: string | null;
+  note: string; created_at: string;
+}
+
+/** C43: anonymized peer tip. */
+export interface CoachTip {
+  id: string; coach_id: string; title: string; body: string; created_at: string;
+}
+
+/** C45: end-of-challenge survey response. */
+export interface ChallengeSurvey {
+  id: string; assignment_id: string; q1_rating: number; q2_text: string | null; created_at: string;
+}
+
+/** C41-alt: customer journey stage. */
+export type JourneyStage = "new" | "active" | "returning" | "dormant";
+
+/** U37: app feedback row. */
+export interface AppFeedback {
+  id: string; user_id: string; rating: number; message: string | null; created_at: string;
+}
+
+/** U40: per-kit usage reminder. */
+export interface KitReminder {
+  id: string; user_id: string; kit_id: string | null; label_en: string; label_ne: string | null;
+  remind_at: string; done: boolean; created_at: string;
+}
+
+/** U42: product usage log row. */
+export interface KitUsage {
+  id: string; user_id: string; kit_id: string | null; used_at: string;
+  note: string | null; created_at: string;
 }

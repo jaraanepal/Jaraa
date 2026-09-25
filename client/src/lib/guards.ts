@@ -35,6 +35,12 @@ export const ROUTE_RULES: Record<string, RouteRule> = {
   "/progress": { auth: true, roles: ["customer"] },
   "/kits": { auth: false },
   "/orders": { auth: true, roles: ["customer"] },
+  "/habits": { auth: true, roles: ["customer"] },
+  "/referral": { auth: true, roles: ["customer"] },
+  "/wishlist": { auth: true, roles: ["customer"] },
+  "/help": { auth: true, roles: ["customer"] },
+  "/my-data": { auth: true, roles: ["customer"] },
+  "/my-challenges": { auth: true, roles: ["customer"] },
   "/teleconsult": { auth: true, roles: ["customer"] },
   "/doctor": { auth: true, roles: ["doctor"] }, // /doctor/* prefix
   "/admin": { auth: true, roles: ["admin"] }, // /admin/* prefix

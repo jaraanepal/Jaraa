@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { meApi, shopApi } from "../api/client";
+import { customerB3Api } from "../api/b3customer";
 import { useAuth } from "../auth/AuthContext";
 import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, Loading, Modal, apiErrorMessage, toast } from "../components/ui";
 import { Icon } from "../components/icons";
+import { GiftCheckoutFields } from "../components/b3customer";
 import type { Address, Kit } from "../api/types";
 
 type PayMethod = "cod" | "esewa" | "khalti";
@@ -30,6 +32,34 @@ export default function KitDetail() {
   const [addrLoading, setAddrLoading] = useState(false);
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
   const [useNew, setUseNew] = useState(true);
+  // U6: wishlist state for this kit.
+  const [wishlisted, setWishlisted] = useState<boolean | null>(null);
+
+  // U6: check whether this kit is already on the wishlist (signed-in only).
+  useEffect(() => {
+    if (!id || !isAuthed || isGuest) return;
+    meApi
+      .listWishlist()
+      .then((r) => setWishlisted(r.items.some((i) => i.kit_id === id)))
+      .catch(() => setWishlisted(null));
+  }, [id, isAuthed, isGuest]);
+
+  async function toggleWishlist() {
+    if (!id || wishlisted === null) return;
+    try {
+      if (wishlisted) {
+        await meApi.removeFromWishlist(id);
+        setWishlisted(false);
+        toast(t("p12.customer.wishlistRemoved"));
+      } else {
+        await meApi.addToWishlist(id);
+        setWishlisted(true);
+        toast(t("p12.customer.wishlistAdded"));
+      }
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -45,6 +75,22 @@ export default function KitDetail() {
         setLoading(false);
       });
   }, [id, t]);
+
+  // U19: delivery instructions prefilled from the profile.
+  const [deliveryNote, setDeliveryNote] = useState("");
+  // A16: coupon code applied at checkout (server validates + discounts).
+  const [couponCode, setCouponCode] = useState("");
+  // U26: gift-a-kit — client-only; server stores the fields via the order endpoint (shop track).
+  const [gift, setGift] = useState({ isGift: false, name: "", phone: "", message: "" });
+  useEffect(() => {
+    if (!checkoutOpen || !isAuthed || isGuest) return;
+    meApi.getProfile().then((p) => {
+      setDeliveryNote(p.delivery_instructions ?? "");
+      // U46 (batch 4): prefill the saved default payment method.
+      const dp = (p as { default_payment?: string | null }).default_payment;
+      if (dp === "esewa" || dp === "khalti" || dp === "cod") setPay(dp);
+    }).catch(() => {});
+  }, [checkoutOpen, isAuthed, isGuest]);
 
   // P10: when the checkout modal opens for a signed-in (non-guest) user,
   // load their saved addresses so they can pick one instead of retyping.
@@ -83,6 +129,18 @@ export default function KitDetail() {
       setError(t("checkout.invalid"));
       return;
     }
+    // U26: gift fields ride on the order payload (server validates + stores).
+    const giftPayload = gift.isGift && gift.name.trim()
+      ? customerB3Api.toGiftPayload({
+          recipient_name: gift.name.trim(),
+          recipient_phone: gift.phone.replace(/\D/g, ""),
+          message: gift.message.trim(),
+        })
+      : {};
+    if (gift.isGift && !gift.name.trim()) {
+      setError(t("checkout.invalid"));
+      return;
+    }
     setPaying(true);
     setError(null);
     try {
@@ -91,6 +149,9 @@ export default function KitDetail() {
           kit_id: kit.id,
           payment_method: pay,
           shipping_address: { name: shipName, phone: shipPhone, city: shipCity, address_line: shipLine },
+          delivery_instructions: deliveryNote.trim() || undefined,
+          coupon_code: couponCode.trim() || undefined,
+          ...giftPayload,
         },
         crypto.randomUUID(),
       );
@@ -110,6 +171,7 @@ export default function KitDetail() {
     setSavedAddresses([]);
     setSelectedAddrId(null);
     setUseNew(true);
+    setGift({ isGift: false, name: "", phone: "", message: "" });
   }
 
   if (loading) return <Loading />;
@@ -231,6 +293,12 @@ export default function KitDetail() {
       >
         {t("kits.buyNow")}
       </button>
+      {/* U6: wishlist toggle (signed-in customers only) */}
+      {isAuthed && !isGuest && wishlisted !== null && (
+        <button className="btn btn-g" onClick={toggleWishlist} style={{ marginTop: 8 }}>
+          {wishlisted ? t("p12.customer.removeWishlist") : t("p12.customer.addWishlist")}
+        </button>
+      )}
       <p className="tiny muted center">{t("kits.cosmeticOnly")}</p>
 
       {checkoutOpen && (
@@ -300,6 +368,12 @@ export default function KitDetail() {
                   <input type="text" placeholder={t("checkout.addressPh")} value={address} onChange={(e) => setAddress(e.target.value)} aria-label={t("checkout.address")} />
                 </>
               )}
+              <label className="fl" htmlFor="co-deliv">{t("p12b.customer.delivery")}</label>
+              <textarea id="co-deliv" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} placeholder={t("p12b.customer.deliveryPh")} rows={2} maxLength={500} />
+              <label className="fl" htmlFor="co-coupon">{t("p12b.customer.coupon")}</label>
+              <input id="co-coupon" type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={t("p12b.customer.couponPh")} maxLength={24} autoComplete="off" />
+              {/* U26: send this order as a gift */}
+              <GiftCheckoutFields value={gift} onChange={setGift} />
               <label className="fl" htmlFor="co-pay">{t("checkout.paymentMethod")}</label>
               <select id="co-pay" value={pay} onChange={(e) => setPay(e.target.value as PayMethod)}>
                 <option value="cod">{t("checkout.cod")}</option>

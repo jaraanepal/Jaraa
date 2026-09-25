@@ -22,23 +22,37 @@ import type {
   Case,
   CaseListResponse,
   Checkin,
+  Challenge,
+  ChallengeAssignment,
+  CoachNote,
   Consent,
   ConsentType,
   Consult,
   CreateOrderPayload,
+  DamageReport,
   DataDeletionResponse,
+  DoctorAvailability,
+  EducationArticle,
+  Escalation,
   FeatureFlag,
   FeatureFlagListResponse,
+  FinanceSnapshot,
+  FollowUp,
   FunnelAnalytics,
+  HandoverNote,
   KitListResponse,
   Kit,
   KitUpsertPayload,
   Nudge,
   Order,
+  OrderCheck,
   OrderStatus,
   OtpRequestResponse,
   OtpVerifyResponse,
+  OverdueCase,
   PasswordAuthResponse,
+  PatientCase,
+  PatientSearchResult,
   Photo,
   PhotoAngle,
   Plan,
@@ -47,15 +61,30 @@ import type {
   ProgressBundle,
   RedFlag,
   RedFlagType,
+  Refund,
   Role,
   RootMap,
+  SatisfactionRating,
   Scan,
   ScanDetail,
   ScanRule,
   ScanRuleListResponse,
   ScanStage,
+  ScheduledNudge,
+  StaffVerification,
   StageAdvanceResponse,
+  DoctorWorkload, DoctorSlaSummary, ReplySnippet, ReviewChecklist, ChecklistItem,
+  PatientRisk, PhotoRequest, DoctorReviewStats, DoctorNoteSearchResult,
+  RolePermission, Announcement, RefreshSessionView, LoginAttempt, Coupon,
+  SystemHealth, StorageBucketUsage, BackupRecord, NotificationTemplate,
+  StockMovement, ReorderSuggestion, PackingCheck, OrderLabel, ZoneStat,
+  KitBatch, Supplier, ChallengeGroup, Badge, SessionSummary, CustomerGoal,
+  HabitTemplate, NoteTemplate, CoachRiskFlag, ArticleAssignment,
+  SymptomEntry, WaterLog, SleepLog, NotificationPrefs, EmergencyContact,
+  SupportTicket,
+  TicketReply,
   TimelineEvent,
+  WishlistItem,
   PinType,
 } from "./types";
 
@@ -270,8 +299,78 @@ export const meApi = {
   getRootMapHistory: () => request<{ versions: RootMap[] }>("/me/root-map/history"),
   createCheckin: (payload: { plan_id?: string; shedding_estimate?: number; note?: string; photo_ids?: string[] }) =>
     request<Checkin>("/me/checkins", { method: "POST", body: json(payload) }),
+  /** Own habit check-ins, newest first (Batch-1 customer/coach features). */
+  listCheckins: () => request<{ checkins: Checkin[] }>("/me/checkins"),
   getProgress: () => request<ProgressBundle>("/me/progress"),
   requestDataDeletion: () => request<DataDeletionResponse>("/me/data", { method: "DELETE" }),
+
+  /* ---------------- P-12 customer features ---------------- */
+  /** Support tickets (A7). */
+  listTickets: () => request<{ tickets: SupportTicket[] }>("/me/tickets"),
+  /** Open a support ticket (A7). */
+  createTicket: (subject: string, body: string) =>
+    request<{ ticket: SupportTicket }>("/me/tickets", { method: "POST", body: json({ subject, body }) }),
+  /** Ticket + replies (A7). */
+  getTicket: (id: string) =>
+    request<{ ticket: SupportTicket; replies: TicketReply[] }>(`/me/tickets/${encodeURIComponent(id)}`),
+  /** Reply on own ticket (A7). */
+  replyTicket: (id: string, body: string) =>
+    request<{ reply: TicketReply }>(`/me/tickets/${encodeURIComponent(id)}/reply`, {
+      method: "POST",
+      body: json({ body }),
+    }),
+  /** Assigned challenges (C4). */
+  listMyChallenges: () => request<{ assignments: ChallengeAssignment[] }>("/me/challenges"),
+  /** Complete a challenge (C4). */
+  completeChallenge: (assignmentId: string) =>
+    request<{ assignment: ChallengeAssignment }>(
+      `/me/challenges/${encodeURIComponent(assignmentId)}/complete`,
+      { method: "POST" },
+    ),
+  /** Kit wishlist (U6). */
+  listWishlist: () => request<{ items: WishlistItem[] }>("/me/wishlist"),
+  /** Add a kit to the wishlist (U6). */
+  addToWishlist: (kit_id: string) =>
+    request<{ item: WishlistItem }>("/me/wishlist", { method: "POST", body: json({ kit_id }) }),
+  /** Remove a kit from the wishlist (U6). */
+  removeFromWishlist: (kitId: string) =>
+    request<void>(`/me/wishlist/${encodeURIComponent(kitId)}`, { method: "DELETE" }),
+
+  /* ---------------- Batch 2 (008): U12–U20 ---------------- */
+  /** Plan history (U12). */
+  planHistory: () => request<{ plans: Plan[] }>("/me/plans/history"),
+  /** Symptom diary (U13). */
+  listSymptoms: () => request<{ entries: SymptomEntry[] }>("/me/symptoms"),
+  saveSymptom: (entry_date: string, note: string) =>
+    request<SymptomEntry>("/me/symptoms", { method: "POST", body: json({ entry_date, note }) }),
+  deleteSymptom: (id: string) =>
+    request<void>(`/me/symptoms/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Water tracker (U14). */
+  getWater: (date?: string) =>
+    request<{ log: WaterLog | null }>(`/me/water${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  setWater: (log_date: string, glasses: number) =>
+    request<WaterLog>("/me/water", { method: "POST", body: json({ log_date, glasses }) }),
+  /** Sleep log (U15). */
+  listSleep: () => request<{ logs: SleepLog[] }>("/me/sleep"),
+  saveSleep: (payload: { log_date: string; bedtime?: string; wake_time?: string; quality?: number }) =>
+    request<SleepLog>("/me/sleep", { method: "POST", body: json(payload) }),
+  deleteSleep: (id: string) =>
+    request<void>(`/me/sleep/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Notification prefs (U17). */
+  getNotificationPrefs: () => request<NotificationPrefs>("/me/notification-prefs"),
+  setNotificationPrefs: (patch: Partial<NotificationPrefs>) =>
+    request<NotificationPrefs>("/me/notification-prefs", { method: "PUT", body: json(patch) }),
+  /** Emergency contacts (U20). */
+  listEmergencyContacts: () => request<{ contacts: EmergencyContact[] }>("/me/emergency-contacts"),
+  createEmergencyContact: (payload: { name: string; phone: string; relation?: string }) =>
+    request<EmergencyContact>("/me/emergency-contacts", { method: "POST", body: json(payload) }),
+  deleteEmergencyContact: (id: string) =>
+    request<void>(`/me/emergency-contacts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Badges my coach awarded me (C11). */
+  getMyBadges: () => request<{ badges: Badge[] }>("/me/badges"),
+  /** Articles my coach shared with me (C18). */
+  getAssignedArticles: () =>
+    request<{ articles: Array<EducationArticle & { assigned_at: string }> }>("/me/articles/assigned"),
 };
 
 /* -------------------------------------------------------- scans --- */
@@ -333,6 +432,8 @@ export const doctorApi = {
       review_notes?: string;
       rescan_due_on?: string;
       resolved_flag_ids?: string[];
+      /** D36: one non-empty note per resolved flag id (server enforces). */
+      resolved_flag_notes?: Record<string, string>;
     },
   ) => request<Plan>(`/doctor/cases/${caseId}/plan`, { method: "POST", body: json(payload) }),
   approvePlan: (planId: string) => request<Plan>(`/doctor/plans/${planId}/approve`, {
@@ -341,6 +442,81 @@ export const doctorApi = {
   }),
   /** Full case context for review: the scan detail carries timeline, photos, scores, flags. */
   getCaseScan: (scanId: string) => scansApi.getScan(scanId),
+
+  /* ---------------- P-12 doctor dashboard features ---------------- */
+  /** Patient timeline + score trend data (D3, D5). */
+  patientCases: (userId: string) =>
+    request<{ cases: PatientCase[] }>(`/doctor/patients/${encodeURIComponent(userId)}/cases`),
+  /** Patient search by name/phone (D7). */
+  searchPatients: (q: string) =>
+    request<{ patients: PatientSearchResult[] }>(`/doctor/patients/search?q=${encodeURIComponent(q)}`),
+  /** Schedule a follow-up (D6). */
+  createFollowUp: (payload: { case_id: string; due_on: string; note?: string }) =>
+    request<FollowUp>("/doctor/follow-ups", { method: "POST", body: json(payload) }),
+  /** Own follow-ups, optionally due-only (D6). */
+  listFollowUps: (dueOnly = false) =>
+    request<{ follow_ups: FollowUp[] }>(`/doctor/follow-ups${dueOnly ? "?due_only=1" : ""}`),
+  /** Mark a follow-up done (D6). */
+  completeFollowUp: (id: string) =>
+    request<FollowUp>(`/doctor/follow-ups/${encodeURIComponent(id)}/done`, { method: "PATCH" }),
+  /** Bulk priority change on queue cases (D8). */
+  bulkPriority: (ids: string[], priority: 0 | 50 | 100) =>
+    request<{ updated: number }>("/doctor/cases/bulk-priority", {
+      method: "PATCH",
+      body: json({ ids, priority }),
+    }),
+  /** Own availability (D9). */
+  getAvailability: () => request<{ availability: DoctorAvailability | null }>("/doctor/availability"),
+  /** Set own availability (D9). */
+  setAvailability: (status: "available" | "on_leave", note?: string) =>
+    request<DoctorAvailability>("/doctor/availability", {
+      method: "PUT",
+      body: json({ status, note }),
+    }),
+
+  /* ---------------- Batch 2 (008): D10–D18 ---------------- */
+  /** Workload banner data (D10). */
+  getWorkload: () => request<DoctorWorkload>("/doctor/workload"),
+  /** SLA banner counts (D11). */
+  getSlaSummary: () => request<DoctorSlaSummary>("/doctor/sla-summary"),
+  /** Reply snippets (D12). */
+  listSnippets: () => request<{ snippets: ReplySnippet[] }>("/doctor/snippets"),
+  createSnippet: (payload: { title: string; body_en: string; body_ne?: string }) =>
+    request<ReplySnippet>("/doctor/snippets", { method: "POST", body: json(payload) }),
+  deleteSnippet: (id: string) =>
+    request<void>(`/doctor/snippets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Bookmark a case (D13). */
+  bookmarkCase: (id: string) =>
+    request<{ id: string }>(`/doctor/cases/${encodeURIComponent(id)}/bookmark`, { method: "POST", body: json({}) }),
+  unbookmarkCase: (id: string) =>
+    request<void>(`/doctor/cases/${encodeURIComponent(id)}/bookmark`, { method: "DELETE" }),
+  listBookmarks: () => request<{ case_ids: string[] }>("/doctor/bookmarks"),
+  /** Review checklist (D14). */
+  getChecklist: (caseId: string) =>
+    request<{ checklist: ReviewChecklist | null }>(`/doctor/cases/${encodeURIComponent(caseId)}/checklist`),
+  createChecklist: (caseId: string, items?: { label_en: string; label_ne?: string }[]) =>
+    request<{ checklist: ReviewChecklist }>(`/doctor/cases/${encodeURIComponent(caseId)}/checklist`, {
+      method: "POST", body: json(items ? { items } : {}),
+    }),
+  setChecklistItemDone: (itemId: string, done: boolean) =>
+    request<ChecklistItem>(`/doctor/checklist-items/${encodeURIComponent(itemId)}`, {
+      method: "PATCH", body: json({ done }),
+    }),
+  /** Patient risk badge (D15). */
+  patientRisk: (userId: string) =>
+    request<PatientRisk>(`/doctor/patients/${encodeURIComponent(userId)}/risk`),
+  /** Photo requests (D16). */
+  createPhotoRequest: (caseId: string, angles: string, note?: string) =>
+    request<PhotoRequest>(`/doctor/cases/${encodeURIComponent(caseId)}/photo-request`, {
+      method: "POST", body: json({ angles, note }),
+    }),
+  listPhotoRequests: (caseId: string) =>
+    request<{ requests: PhotoRequest[] }>(`/doctor/cases/${encodeURIComponent(caseId)}/photo-requests`),
+  /** Personal review stats (D17). */
+  getStats: () => request<DoctorReviewStats>("/doctor/stats"),
+  /** Search own review notes (D18). */
+  searchNotes: (q: string) =>
+    request<{ results: DoctorNoteSearchResult[] }>(`/doctor/notes/search?q=${encodeURIComponent(q)}`),
 };
 
 /* --------------------------------------------------------- shop --- */
@@ -364,6 +540,94 @@ export const shopApi = {
       method: "PATCH",
       body: json({ status, ...(fulfilment_note ? { fulfilment_note } : {}) }),
     }),
+
+  /* ---------------- P-12 pharmacy features ---------------- */
+  /** Kit list with stock for fulfilment (P1/P2). */
+  listPharmacyKits: () => request<{ kits: Kit[] }>("/pharmacy/kits"),
+  /** Adjust kit stock by delta (P2). */
+  adjustKitStock: (kitId: string, delta: number) =>
+    request<{ kit: Kit }>(`/pharmacy/kits/${encodeURIComponent(kitId)}/stock`, {
+      method: "PATCH",
+      body: json({ delta }),
+    }),
+  /** Assign courier + tracking ID (P4). */
+  setOrderCourier: (id: string, courier_name?: string | null, tracking_id?: string | null) =>
+    request<{ order: Order }>(`/pharmacy/orders/${encodeURIComponent(id)}/courier`, {
+      method: "PATCH",
+      body: json({ courier_name: courier_name ?? null, tracking_id: tracking_id ?? null }),
+    }),
+  /** Address verification checklist (P5). */
+  addOrderCheck: (id: string, check_type: "name" | "phone" | "address") =>
+    request<{ check: OrderCheck }>(`/pharmacy/orders/${encodeURIComponent(id)}/checks`, {
+      method: "POST",
+      body: json({ check_type }),
+    }),
+  /** List address checks for an order (P5). */
+  listOrderChecks: (id: string) =>
+    request<{ checks: OrderCheck[] }>(`/pharmacy/orders/${encodeURIComponent(id)}/checks`),
+  /** Mark order returned + restock kit (P6). */
+  returnOrder: (id: string, reason: string) =>
+    request<{ order: Order }>(`/pharmacy/orders/${encodeURIComponent(id)}/return`, {
+      method: "POST",
+      body: json({ reason }),
+    }),
+  /** Damage report log (P7). */
+  addDamageReport: (id: string, description: string) =>
+    request<{ report: DamageReport }>(`/pharmacy/orders/${encodeURIComponent(id)}/damage`, {
+      method: "POST",
+      body: json({ description }),
+    }),
+  /** List damage reports for an order (P7). */
+  listDamageReports: (id: string) =>
+    request<{ reports: DamageReport[] }>(`/pharmacy/orders/${encodeURIComponent(id)}/damage`),
+  /** Handover note (P8). */
+  addHandoverNote: (id: string, note: string) =>
+    request<{ note: HandoverNote }>(`/pharmacy/orders/${encodeURIComponent(id)}/handover`, {
+      method: "POST",
+      body: json({ note }),
+    }),
+  /** Handover notes for an order (P8). */
+  listHandoverNotes: (id: string) =>
+    request<{ notes: HandoverNote[] }>(`/pharmacy/orders/${encodeURIComponent(id)}/handover`),
+
+  /* ---------------- Batch 2 (008): P10–P18 ---------------- */
+  /** Stock movement history for a kit (P10). */
+  kitMovements: (kitId: string) =>
+    request<{ movements: StockMovement[] }>(`/pharmacy/kits/${encodeURIComponent(kitId)}/movements`),
+  /** Reorder suggestions (P11). */
+  reorderSuggestions: () =>
+    request<{ suggestions: ReorderSuggestion[] }>("/pharmacy/reorder-suggestions"),
+  /** Packing checklist (P12). */
+  getPacking: (orderId: string) =>
+    request<{ checks: PackingCheck[] }>(`/pharmacy/orders/${encodeURIComponent(orderId)}/packing`),
+  setPackingStep: (orderId: string, step: string, done: boolean) =>
+    request<PackingCheck>(`/pharmacy/orders/${encodeURIComponent(orderId)}/packing`, {
+      method: "POST", body: json({ step, done }),
+    }),
+  /** Printable label payload (P13). */
+  orderLabel: (orderId: string) =>
+    request<{ label: OrderLabel }>(`/pharmacy/orders/${encodeURIComponent(orderId)}/label`),
+  /** Delivery-zone stats (P14). */
+  zoneStats: () => request<{ zones: ZoneStat[] }>("/pharmacy/zones"),
+  /** Duplicate-order detector (P16). */
+  duplicateOrders: () => request<{ duplicates: Order[] }>("/pharmacy/duplicates"),
+  /** Kit batches with expiry (P17). */
+  listBatches: (kitId?: string) =>
+    request<{ batches: KitBatch[] }>(`/pharmacy/batches${kitId ? `?kit_id=${encodeURIComponent(kitId)}` : ""}`),
+  createBatch: (payload: { kit_id: string; batch_no: string; expires_on?: string; qty?: number; supplier_id?: string }) =>
+    request<KitBatch>("/pharmacy/batches", { method: "POST", body: json(payload) }),
+  deleteBatch: (id: string) =>
+    request<void>(`/pharmacy/batches/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  updateBatch: (id: string, patch: { batch_no?: string; expires_on?: string | null; qty?: number; supplier_id?: string | null }) =>
+    request<KitBatch>(`/pharmacy/batches/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  /** Suppliers (P18). */
+  listSuppliers: () => request<{ suppliers: Supplier[] }>("/pharmacy/suppliers"),
+  createSupplier: (payload: { name: string; contact?: string; phone?: string; address?: string; note?: string }) =>
+    request<Supplier>("/pharmacy/suppliers", { method: "POST", body: json(payload) }),
+  updateSupplier: (id: string, patch: Partial<Supplier>) =>
+    request<Supplier>(`/pharmacy/suppliers/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  deleteSupplier: (id: string) =>
+    request<void>(`/pharmacy/suppliers/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 /* ----------------------------------------------------- consults --- */
@@ -445,6 +709,117 @@ export const adminApi = {
       method: "PATCH",
       body: json({ role }),
     }),
+
+  /* ---------------- P-12 admin dashboard features ---------------- */
+  /** Broadcast in-app notification to all users or one role (A1). */
+  broadcast: (payload: {
+    title_en: string; title_ne?: string; body_en?: string; body_ne?: string;
+    role?: "customer" | "doctor" | "pharmacy" | "coach"; link?: string;
+  }) => request<{ sent: number; failed: number }>("/admin/broadcast", { method: "POST", body: json(payload) }),
+  /** Record a refund on an order (A3). */
+  createRefund: (orderId: string, amount_npr: number, reason?: string) =>
+    request<{ refund: Refund; order: Order }>(
+      `/admin/orders/${encodeURIComponent(orderId)}/refund`,
+      { method: "POST", body: json({ amount_npr, reason }) },
+    ),
+  /** All refunds (A3). */
+  listRefunds: () => request<{ refunds: Refund[] }>("/admin/refunds"),
+  /** SLA monitor: overdue cases across doctors (A4). */
+  listOverdueCases: () => request<{ cases: OverdueCase[] }>("/admin/sla"),
+  /** Staff verification queue (A5). */
+  listVerifications: (status?: string) =>
+    request<{ verifications: StaffVerification[] }>(
+      `/admin/verifications${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  /** Approve/reject a verification (A5). */
+  decideVerification: (id: string, approved: boolean, note?: string) =>
+    request<{ verification: StaffVerification }>(
+      `/admin/verifications/${encodeURIComponent(id)}/decide`,
+      { method: "POST", body: json({ approved, note }) },
+    ),
+  /** Finance snapshot (A6). */
+  getFinance: () => request<{ finance: FinanceSnapshot }>("/admin/finance"),
+  /** Support ticket inbox (A7). */
+  listTickets: (status?: string) =>
+    request<{ tickets: SupportTicket[] }>(
+      `/admin/tickets${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  /** Ticket + replies (A7). */
+  getTicket: (id: string) =>
+    request<{ ticket: SupportTicket; replies: TicketReply[] }>(`/admin/tickets/${encodeURIComponent(id)}`),
+  /** Reply to a ticket — notifies the customer (A7). */
+  replyTicket: (id: string, body: string) =>
+    request<{ reply: TicketReply }>(`/admin/tickets/${encodeURIComponent(id)}/reply`, {
+      method: "POST",
+      body: json({ body }),
+    }),
+  /** Change ticket status (A7). */
+  setTicketStatus: (id: string, status: "open" | "answered" | "closed") =>
+    request<{ ticket: SupportTicket }>(`/admin/tickets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: json({ status }),
+    }),
+  /** Education articles (A8). */
+  listArticles: () => request<{ articles: EducationArticle[] }>("/admin/articles"),
+  createArticle: (payload: {
+    title_en: string; title_ne?: string; body_en: string; body_ne?: string; is_published?: boolean;
+  }) => request<{ article: EducationArticle }>("/admin/articles", { method: "POST", body: json(payload) }),
+  updateArticle: (id: string, patch: Partial<EducationArticle>) =>
+    request<{ article: EducationArticle }>(`/admin/articles/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: json(patch),
+    }),
+  deleteArticle: (id: string) =>
+    request<void>(`/admin/articles/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Doctor availability roster (D9 admin view). */
+  listDoctorAvailability: () =>
+    request<{ doctors: DoctorAvailability[] }>("/admin/doctors/availability"),
+
+  /* ---------------- Batch 2 (008): A12–A20 ---------------- */
+  /** Role permissions (A12). */
+  getRolePermissions: (role: string) =>
+    request<{ role: string; permissions: RolePermission[] }>(`/admin/roles/${encodeURIComponent(role)}/permissions`),
+  setRolePermissions: (role: string, permissions: { permission: string; granted: boolean }[]) =>
+    request<{ role: string; permissions: RolePermission[] }>(`/admin/roles/${encodeURIComponent(role)}/permissions`, {
+      method: "PUT", body: json({ permissions }),
+    }),
+  /** Announcements (A13). */
+  listAnnouncements: () => request<{ announcements: Announcement[] }>("/admin/announcements"),
+  createAnnouncement: (payload: Partial<Announcement>) =>
+    request<Announcement>("/admin/announcements", { method: "POST", body: json(payload) }),
+  updateAnnouncement: (id: string, patch: Partial<Announcement>) =>
+    request<Announcement>(`/admin/announcements/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  deleteAnnouncement: (id: string) =>
+    request<void>(`/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Active sessions (A14). */
+  listSessions: (userId: string) =>
+    request<{ sessions: RefreshSessionView[] }>(`/admin/sessions?user_id=${encodeURIComponent(userId)}`),
+  revokeSession: (tokenHash: string, userId: string) =>
+    request<void>(`/admin/sessions/${encodeURIComponent(tokenHash)}?user_id=${encodeURIComponent(userId)}`, { method: "DELETE" }),
+  /** Login attempts (A15). */
+  listLoginAttempts: (limit = 50) =>
+    request<{ attempts: LoginAttempt[] }>(`/admin/login-attempts?limit=${limit}`),
+  /** Coupons (A16). */
+  listCoupons: () => request<{ coupons: Coupon[] }>("/admin/coupons"),
+  createCoupon: (payload: Partial<Coupon>) =>
+    request<Coupon>("/admin/coupons", { method: "POST", body: json(payload) }),
+  updateCoupon: (id: string, is_active: boolean) =>
+    request<Coupon>(`/admin/coupons/${encodeURIComponent(id)}`, { method: "PATCH", body: json({ is_active }) }),
+  /** System health (A17). */
+  getHealth: () => request<SystemHealth>("/admin/health"),
+  /** Storage usage (A18). */
+  getStorage: () => request<{ buckets: StorageBucketUsage[] }>("/admin/storage"),
+  /** Backups (A19). */
+  listBackups: () => request<{ backups: BackupRecord[] }>("/admin/backups"),
+  recordBackup: (payload: Partial<BackupRecord>) =>
+    request<BackupRecord>("/admin/backups", { method: "POST", body: json(payload) }),
+  /** Notification templates (A20). */
+  listNotificationTemplates: () =>
+    request<{ templates: NotificationTemplate[] }>("/admin/notification-templates"),
+  createNotificationTemplate: (payload: Partial<NotificationTemplate>) =>
+    request<NotificationTemplate>("/admin/notification-templates", { method: "POST", body: json(payload) }),
+  deleteNotificationTemplate: (id: string) =>
+    request<void>(`/admin/notification-templates/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 /* ----------------------------------- admin kits ---
@@ -501,6 +876,133 @@ export const coachApi = {
   /** Rule-based nudges for one customer (contract: ?user_id required for coach). */
   getNudges: (userId: string) =>
     request<{ nudges: Nudge[] }>(`/coach/nudges?user_id=${encodeURIComponent(userId)}`),
+
+  /* ---------------- P-12 coach features ---------------- */
+  /** Customer habit check-ins for review (C1). */
+  listCustomerCheckins: (userId: string) =>
+    request<{ checkins: Checkin[] }>(`/coach/customers/${encodeURIComponent(userId)}/checkins`),
+  /** Challenges (C4). */
+  listChallenges: () => request<{ challenges: Challenge[] }>("/coach/challenges"),
+  /** Create a challenge (C4). */
+  createChallenge: (payload: {
+    title_en: string; title_ne?: string; days: 7 | 14 | 30;
+    description_en?: string; description_ne?: string;
+  }) => request<{ challenge: Challenge }>("/coach/challenges", { method: "POST", body: json(payload) }),
+  /** Assign a challenge to a customer (C4). */
+  assignChallenge: (challengeId: string, user_id: string) =>
+    request<{ assignment: ChallengeAssignment }>(
+      `/coach/challenges/${encodeURIComponent(challengeId)}/assign`,
+      { method: "POST", body: json({ user_id }) },
+    ),
+  /** Timestamped customer notes history (C5). */
+  listCustomerNotes: (userId: string) =>
+    request<{ notes: CoachNote[] }>(`/coach/customers/${encodeURIComponent(userId)}/notes`),
+  /** Add a customer note (C5). */
+  addCustomerNote: (userId: string, note: string) =>
+    request<{ note: CoachNote }>(`/coach/customers/${encodeURIComponent(userId)}/notes`, {
+      method: "POST",
+      body: json({ note }),
+    }),
+  /** Escalate a customer to doctors (C6). */
+  escalateCustomer: (userId: string, reason: string) =>
+    request<{ escalation: Escalation }>(`/coach/customers/${encodeURIComponent(userId)}/escalate`, {
+      method: "POST",
+      body: json({ reason }),
+    }),
+  /** Escalations (C6). */
+  listEscalations: (status?: string) =>
+    request<{ escalations: Escalation[] }>(
+      `/coach/escalations${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  /** Scheduled reminders (C7). */
+  listScheduledNudges: () => request<{ nudges: ScheduledNudge[] }>("/coach/nudges/scheduled"),
+  /** Schedule a future nudge (C7). */
+  scheduleNudge: (payload: { user_id: string; message_en: string; message_ne?: string; send_at: string }) =>
+    request<{ nudge: ScheduledNudge }>("/coach/nudges/scheduled", { method: "POST", body: json(payload) }),
+  /** Send a scheduled nudge now (C7). */
+  sendScheduledNudge: (id: string) =>
+    request<{ nudge: ScheduledNudge }>(`/coach/nudges/scheduled/${encodeURIComponent(id)}/send`, {
+      method: "POST",
+    }),
+  /** Delete an unsent scheduled nudge (C7). */
+  deleteScheduledNudge: (id: string) =>
+    request<void>(`/coach/nudges/scheduled/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Satisfaction rating log (C8). */
+  listSatisfaction: (userId: string) =>
+    request<{ ratings: SatisfactionRating[] }>(
+      `/coach/customers/${encodeURIComponent(userId)}/satisfaction`,
+    ),
+  /** Log a satisfaction rating (C8). */
+  addSatisfaction: (userId: string, rating: number, comment?: string) =>
+    request<{ rating: SatisfactionRating }>(
+      `/coach/customers/${encodeURIComponent(userId)}/satisfaction`,
+      { method: "POST", body: json({ rating, comment }) },
+    ),
+  /** Coach knowledge base: published education articles (C9). */
+  listArticles: () => request<{ articles: EducationArticle[] }>("/coach/articles"),
+
+  /* ---------------- Batch 2 (008): C10–C18 ---------------- */
+  /** Group challenges (C10). */
+  createChallengeGroup: (payload: { title_en: string; title_ne?: string; description_en?: string; description_ne?: string; starts_on?: string; ends_on?: string }) =>
+    request<ChallengeGroup>("/coach/challenge-groups", { method: "POST", body: json(payload) }),
+  listChallengeGroups: () => request<{ groups: ChallengeGroup[] }>("/coach/challenge-groups"),
+  assignChallengeGroup: (groupId: string, userId: string) =>
+    request<void>(`/coach/challenge-groups/${encodeURIComponent(groupId)}/assign`, {
+      method: "POST", body: json({ user_id: userId }),
+    }),
+  /** Milestone badges (C11). */
+  awardBadge: (userId: string, badge: string) =>
+    request<Badge>(`/coach/customers/${encodeURIComponent(userId)}/badges`, {
+      method: "POST", body: json({ badge }),
+    }),
+  listBadges: (userId: string) =>
+    request<{ badges: Badge[] }>(`/coach/customers/${encodeURIComponent(userId)}/badges`),
+  /** Session summaries (C12). */
+  addSessionSummary: (userId: string, summary: string) =>
+    request<SessionSummary>(`/coach/customers/${encodeURIComponent(userId)}/sessions`, {
+      method: "POST", body: json({ summary }),
+    }),
+  listSessionSummaries: (userId: string) =>
+    request<{ sessions: SessionSummary[] }>(`/coach/customers/${encodeURIComponent(userId)}/sessions`),
+  /** Customer goals (C13). */
+  createCustomerGoal: (userId: string, payload: { title_en: string; title_ne?: string; target_date?: string }) =>
+    request<CustomerGoal>(`/coach/customers/${encodeURIComponent(userId)}/goals`, {
+      method: "POST", body: json(payload),
+    }),
+  listCustomerGoals: (userId: string) =>
+    request<{ goals: CustomerGoal[] }>(`/coach/customers/${encodeURIComponent(userId)}/goals`),
+  completeCustomerGoal: (goalId: string) =>
+    request<CustomerGoal>(`/coach/goals/${encodeURIComponent(goalId)}/complete`, { method: "PATCH" }),
+  deleteCustomerGoal: (goalId: string) =>
+    request<void>(`/coach/goals/${encodeURIComponent(goalId)}`, { method: "DELETE" }),
+  /** Habit templates (C14). */
+  createHabitTemplate: (payload: { title_en: string; title_ne?: string; description_en?: string; description_ne?: string }) =>
+    request<HabitTemplate>("/coach/habit-templates", { method: "POST", body: json(payload) }),
+  listHabitTemplates: () => request<{ templates: HabitTemplate[] }>("/coach/habit-templates"),
+  deleteHabitTemplate: (id: string) =>
+    request<void>(`/coach/habit-templates/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  updateHabitTemplate: (id: string, patch: { title_en?: string; description_en?: string | null }) =>
+    request<HabitTemplate>(`/coach/habit-templates/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  /** Weekly digest (C15). */
+  digestPreview: () =>
+    request<{ at_risk_count: number; at_risk: CoachRiskFlag[] }>("/coach/digest/preview", { method: "POST", body: json({}) }),
+  sendDigest: (payload: { headline_en: string; headline_ne?: string; body_en?: string; body_ne?: string }) =>
+    request<{ sent: number }>("/coach/digest/send", { method: "POST", body: json(payload) }),
+  /** Note templates (C16). */
+  createNoteTemplate: (payload: { title: string; body_en: string; body_ne?: string }) =>
+    request<NoteTemplate>("/coach/note-templates", { method: "POST", body: json(payload) }),
+  listNoteTemplates: () => request<{ templates: NoteTemplate[] }>("/coach/note-templates"),
+  deleteNoteTemplate: (id: string) =>
+    request<void>(`/coach/note-templates/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  updateNoteTemplate: (id: string, patch: { title?: string; body_en?: string }) =>
+    request<NoteTemplate>(`/coach/note-templates/${encodeURIComponent(id)}`, { method: "PATCH", body: json(patch) }),
+  /** Risk flags (C17). */
+  riskFlags: () => request<{ flags: CoachRiskFlag[] }>("/coach/risk-flags"),
+  /** Article assignment (C18). */
+  assignArticle: (articleId: string, userId: string) =>
+    request<ArticleAssignment>(`/coach/articles/${encodeURIComponent(articleId)}/assign`, {
+      method: "POST", body: json({ user_id: userId }),
+    }),
 };
 
 /* ---------------------------------- notifications --- */

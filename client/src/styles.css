@@ -595,3 +595,58 @@ a { color: var(--green); }
   .rise { animation: none; }
   .seg-ind { transition: none; }
 }
+
+/* U18: persisted dark mode — surface/text variable overrides only. */
+:root[data-theme="dark"] {
+  --green-l: #24382e;
+  --gold-l: #3a3122;
+  --cream: #101712;
+  --ink: #ecefe9;
+  --mut: #a9b3ab;
+  --line: #2c3830;
+  --card: #1a231e;
+  --bad-l: #3a1f1a;
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+:root[data-theme="dark"] body { background: #0a0f0c; color: var(--ink); }
+:root[data-theme="dark"] .app { background: var(--cream); }
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: #222c26;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+/* ---------------- Batch-3 (009) D27: printable case export --- */
+@media print {
+  /* Hide app chrome: header, nav, drawers, toasts, buttons, links. */
+  .topbar, .bottomnav, .drawer, .toast-host, .modalwrap,
+  .screen button, .screen .btn, .screen .linklike, .tabrow {
+    display: none !important;
+  }
+  .screen {
+    max-width: none;
+    padding: 0;
+  }
+  .card {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+  /* Force readable black-on-white regardless of the app theme. */
+  :root, :root[data-theme="dark"] {
+    --ink: #000;
+    --mut: #444;
+    --line: #ccc;
+    --card: #fff;
+    --cream: #fff;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  img {
+    max-width: 45%;
+  }
+}

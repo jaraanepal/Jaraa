@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { adminKitsApi } from "../../api/client";
+import { adminB3Api } from "../../api/b3admin";
 import { useLang } from "../../i18n/LanguageContext";
 import { EmptyState, ErrorCard, Loading, apiErrorMessage, toast } from "../../components/ui";
+import { useAsync } from "../../components/useAsync";
 import { Icon } from "../../components/icons";
 import { kitPayload, parseIncluded, type KitFormValues } from "../../lib/kitForm";
 import type { AdminKit } from "../../api/types";
@@ -173,9 +175,55 @@ function KitForm({
   );
 }
 
+/** A26 — ranked table of kits by orders + revenue (cancelled orders excluded). */
+function KitLeaderboard() {
+  const { t } = useLang();
+  const { data, error, loading, retry } = useAsync(() =>
+    adminB3Api.kitLeaderboard().then((r) => r.leaderboard),
+  );
+  const errMsg = error ? apiErrorMessage(t, error) : null;
+
+  return (
+    <div>
+      {loading && <Loading />}
+      {errMsg && <ErrorCard message={errMsg} onRetry={retry} />}
+
+      {!loading && !error && (data ?? []).length === 0 && (
+        <EmptyState icon={<Icon.box size={32} />} title={t("p12c.admin.kitLeaderboard.empty")} />
+      )}
+
+      {!loading && !error && (data ?? []).length > 0 && (
+        <div className="card">
+          <table className="tiny" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>#</th>
+                <th style={{ textAlign: "left" }}>{t("p12c.admin.kitLeaderboard.kit")}</th>
+                <th style={{ textAlign: "right" }}>{t("p12c.admin.kitLeaderboard.orders")}</th>
+                <th style={{ textAlign: "right" }}>{t("p12c.admin.kitLeaderboard.revenue")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data ?? []).map((row, i) => (
+                <tr key={row.kit_id}>
+                  <td>{i + 1}</td>
+                  <td><b>{row.name}</b></td>
+                  <td style={{ textAlign: "right" }}>{row.orders}</td>
+                  <td style={{ textAlign: "right" }}>{row.revenue_npr}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Admin kit management: search/filter/pagination, create/edit, soft-delete. */
 export default function AdminKits() {
   const { t } = useLang();
+  const [tab, setTab] = useState<"kits" | "leaderboard">("kits");
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [category, setCategory] = useState("");
@@ -280,7 +328,20 @@ export default function AdminKits() {
         } />
       ) : (
         <>
-          <div className="searchbar">
+          <div className="tabrow" role="tablist">
+            <button className={`tab${tab === "kits" ? " on" : ""}`} role="tab" aria-selected={tab === "kits"} onClick={() => setTab("kits")}>
+              {t("adminKits.title")}
+            </button>
+            <button className={`tab${tab === "leaderboard" ? " on" : ""}`} role="tab" aria-selected={tab === "leaderboard"} onClick={() => setTab("leaderboard")}>
+              {t("p12c.admin.kitLeaderboard.title")}
+            </button>
+          </div>
+
+      {tab === "leaderboard" ? (
+        <KitLeaderboard />
+      ) : (
+      <>
+      <div className="searchbar">
             <input
               type="search"
               value={q}
@@ -357,6 +418,8 @@ export default function AdminKits() {
             </div>
           )}
         </>
+      )}
+      </>
       )}
     </div>
   );

@@ -3,29 +3,63 @@
 // Used for: plan-approved notification, order confirmation, welcome email.
 export interface EmailResult { messageId?: string; skipped?: boolean }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<EmailResult> {
+/**
+ * A37: email delivery log hook. The app wires a store logger here
+ * (server/src/app.ts -> setEmailLogger) so every Brevo send — including
+ * skipped (unconfigured) and failed sends — lands in email_logs.
+ * Logging never throws and never breaks the send path.
+ */
+export interface EmailLogEvent {
+  to_email: string; template: string; status: "sent" | "failed"; error?: string | null;
+}
+let emailLogger: ((e: EmailLogEvent) => void) | null = null;
+export function setEmailLogger(fn: ((e: EmailLogEvent) => void) | null): void {
+  emailLogger = fn;
+}
+function logEmailResult(e: EmailLogEvent): void {
+  try {
+    emailLogger?.(e);
+  } catch (err) {
+    console.error("[brevo] email log hook failed:", err);
+  }
+}
+
+export async function sendEmail(to: string, subject: string, html: string, opts?: { template?: string }): Promise<EmailResult> {
+  const template = opts?.template ?? "unknown";
   const apiKey = process.env.BREVO_API_KEY;
   const sender = process.env.BREVO_SENDER_EMAIL;
   if (!apiKey || !sender) {
     console.warn("[brevo] BREVO_API_KEY/BREVO_SENDER_EMAIL not set — email skipped");
+    logEmailResult({ to_email: to, template, status: "failed", error: "BREVO_API_KEY/BREVO_SENDER_EMAIL not set — email skipped" });
     return { skipped: true };
   }
-  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: { "api-key": apiKey, "Content-Type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { email: sender, name: "Jaraa" },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`brevo api error ${res.status}: ${body.slice(0, 200)}`);
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": apiKey, "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: { email: sender, name: "Jaraa" },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const err = `brevo api error ${res.status}: ${body.slice(0, 200)}`;
+      logEmailResult({ to_email: to, template, status: "failed", error: err });
+      throw new Error(err);
+    }
+    const json = (await res.json().catch(() => ({}))) as { messageId?: string };
+    logEmailResult({ to_email: to, template, status: "sent" });
+    return { messageId: json.messageId };
+  } catch (e) {
+    // Network-level failure (fetch threw before we could log) — log it once.
+    if (e instanceof Error && !e.message.startsWith("brevo api error")) {
+      logEmailResult({ to_email: to, template, status: "failed", error: e.message.slice(0, 300) });
+    }
+    throw e;
   }
-  const json = (await res.json().catch(() => ({}))) as { messageId?: string };
-  return { messageId: json.messageId };
 }
 
 const shell = (title: string, body: string) => `<!doctype html><html><body style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px">

@@ -17,14 +17,51 @@ const STATUS_KEY: Record<Case["status"], string> = {
 
 const ROOT_KEYS: RootKey[] = ["nutrition", "stress_sleep", "hormones", "scalp", "damage", "medical_family"];
 
+export type CaseListSort = "priority" | "oldest";
+
+export interface CaseListProps {
+  status: Case["status"];
+  /** Controlled sort for the D1 toolbar (priority = red_flag → high → oldest; oldest = created_at asc). */
+  sort?: CaseListSort;
+  /** D2 date filters (YYYY-MM-DD), applied to created_at. */
+  dateFrom?: string;
+  dateTo?: string;
+  /** D2: red-flag-only filter. */
+  redFlagOnly?: boolean;
+  /** D2: needs_info-only filter. */
+  needsInfoOnly?: boolean;
+  /** D8: when true, each row shows a checkbox for bulk selection. */
+  selectable?: boolean;
+  selected?: string[];
+  onToggleSelect?: (id: string) => void;
+}
+
+function priorityRank(c: Case): number {
+  return c.priority === "red_flag" ? 0 : c.priority === "high" ? 1 : 2;
+}
+
 /**
  * Case list panel, filtered by status, with doctor workflow filters
  * (priority, waiting time, weakest root, sort order). For the review
  * queue each case is progressively enriched with its scan detail
  * (photo count + weakest roots) — fetched with the existing
  * doctorApi.getCaseScan endpoint, never invented.
+ *
+ * Batch-1 (P-12) extensions: controlled `sort` / date / red-flag-only /
+ * needs-info-only props for the D1+D2 toolbar, and D8 row selection via
+ * the `selectable` + `selected` + `onToggleSelect` props.
  */
-export function CaseList({ status }: { status: Case["status"] }) {
+export function CaseList({
+  status,
+  sort: sortProp,
+  dateFrom,
+  dateTo,
+  redFlagOnly,
+  needsInfoOnly,
+  selectable,
+  selected,
+  onToggleSelect,
+}: CaseListProps) {
   const { t } = useLang();
   const { data, error, loading, retry } = useAsync(() =>
     doctorApi.listCases(status, 50).then((r) => r.cases),
@@ -69,15 +106,31 @@ export function CaseList({ status }: { status: Case["status"] }) {
       out = out.filter((c) => waitMs(c) >= min);
     }
     if (fRoot !== "all") out = out.filter((c) => weakestRoots(scans[c.id]).includes(fRoot));
-    out.sort((a, b) =>
-      sort === "oldest"
-        ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        : sort === "newest"
-          ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          : urgencyRank(a) - urgencyRank(b),
-    );
+    // D2 controlled filters.
+    if (dateFrom) out = out.filter((c) => c.created_at.slice(0, 10) >= dateFrom);
+    if (dateTo) out = out.filter((c) => c.created_at.slice(0, 10) <= dateTo);
+    if (redFlagOnly) out = out.filter((c) => c.priority === "red_flag");
+    if (needsInfoOnly) out = out.filter((c) => c.status === "needs_info");
+    // D1 controlled sort, else the internal sort control.
+    if (sortProp === "priority") {
+      out.sort(
+        (a, b) =>
+          priorityRank(a) - priorityRank(b) ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    } else if (sortProp === "oldest") {
+      out.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    } else {
+      out.sort((a, b) =>
+        sort === "oldest"
+          ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          : sort === "newest"
+            ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            : urgencyRank(a) - urgencyRank(b),
+      );
+    }
     return out;
-  }, [data, fPriority, fWait, fRoot, sort, scans]);
+  }, [data, fPriority, fWait, fRoot, sort, scans, sortProp, dateFrom, dateTo, redFlagOnly, needsInfoOnly]);
 
   async function claim(id: string) {
     setClaimError(null);
@@ -128,14 +181,16 @@ export function CaseList({ status }: { status: Case["status"] }) {
             </select>
           </label>
         )}
-        <label className="tiny muted">
-          {t("doctorDash.sortBy")}
-          <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} style={selStyle} aria-label={t("doctorDash.sortBy")}>
-            <option value="urgency">{t("doctorDash.sortUrgency")}</option>
-            <option value="oldest">{t("doctorDash.sortOldest")}</option>
-            <option value="newest">{t("doctorDash.sortNewest")}</option>
-          </select>
-        </label>
+        {!sortProp && (
+          <label className="tiny muted">
+            {t("doctorDash.sortBy")}
+            <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} style={selStyle} aria-label={t("doctorDash.sortBy")}>
+              <option value="urgency">{t("doctorDash.sortUrgency")}</option>
+              <option value="oldest">{t("doctorDash.sortOldest")}</option>
+              <option value="newest">{t("doctorDash.sortNewest")}</option>
+            </select>
+          </label>
+        )}
       </div>
       {status === "queued" && enriching && (
         <p className="tiny muted" style={{ margin: "0 0 6px" }}>{t("doctorDash.loadingDetails")}</p>
@@ -157,6 +212,15 @@ export function CaseList({ status }: { status: Case["status"] }) {
         return (
           <div className="card" key={c.id}>
             <div className="rowflex">
+              {selectable && (
+                <input
+                  type="checkbox"
+                  checked={selected?.includes(c.id) ?? false}
+                  onChange={() => onToggleSelect?.(c.id)}
+                  aria-label={t("p12.doctor.selectToggle")}
+                  style={{ width: 28, height: 28, minHeight: 28 }}
+                />
+              )}
               <span style={{ color: c.priority === "red_flag" ? "var(--bad)" : "var(--green)" }}>
                 <Icon.doc size={26} />
               </span>

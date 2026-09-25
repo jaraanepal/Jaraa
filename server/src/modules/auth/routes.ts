@@ -64,6 +64,7 @@ export function authRoutes(deps: Deps): Router {
     if (!phone || !code) throw badRequest("Request failed validation.", { field: !phone ? "phone" : "code" });
     const ok = await otp.verify(String(phone), String(code));
     if (!ok) {
+      await store.logLoginAttempt({ phone: String(phone), success: false, ip: clientIp(req), user_agent: String(req.headers["user-agent"] ?? "").slice(0, 300) });
       res.status(401).json({ code: "unauthorized", message: "Invalid or expired code." });
       return;
     }
@@ -75,7 +76,7 @@ export function authRoutes(deps: Deps): Router {
       isNew = true;
       if (user.email) {
         const w = welcomeEmail(null);
-        sendEmail(user.email, w.subject, w.html).catch((e) => console.error("[brevo]", e));
+        sendEmail(user.email, w.subject, w.html, { template: "welcome" }).catch((e) => console.error("[brevo]", e));
       }
     }
     if (claim_guest_scan_id) {
@@ -86,6 +87,7 @@ export function authRoutes(deps: Deps): Router {
     }
     const session = await issueSession(res, user);
     await audit(store, { actorId: user.id, action: "auth.otp_verify", entity: "user", entityId: user.id, ip: clientIp(req) });
+    await store.logLoginAttempt({ phone: e164, success: true, ip: clientIp(req), user_agent: String(req.headers["user-agent"] ?? "").slice(0, 300) });
     res.json({ ...session, user: { ...session.user, is_new_user: isNew } });
   }));
 
@@ -124,7 +126,7 @@ export function authRoutes(deps: Deps): Router {
     });
     if (user.email) {
       const w = welcomeEmail(null);
-      sendEmail(user.email, w.subject, w.html).catch((e) => console.error("[brevo]", e));
+      sendEmail(user.email, w.subject, w.html, { template: "welcome" }).catch((e) => console.error("[brevo]", e));
     }
     const session = await issueSession(res, user);
     await audit(store, { actorId: user.id, action: "auth.signup", entity: "user", entityId: user.id, ip: clientIp(req) });
@@ -149,16 +151,24 @@ export function authRoutes(deps: Deps): Router {
     } else {
       throw badRequest("Request failed validation.", { field: "email" });
     }
+    const attemptId = {
+      email: typeof email === "string" && email.trim() !== "" ? String(email).trim().toLowerCase().slice(0, 200) : null,
+      phone: typeof phone === "string" && phone.trim() !== "" ? String(phone).trim().slice(0, 40) : null,
+    };
+    const logFail = () => store.logLoginAttempt({ ...attemptId, success: false, ip: clientIp(req), user_agent: String(req.headers["user-agent"] ?? "").slice(0, 300) });
     if (!user?.password_hash || !user.is_active) {
+      await logFail();
       res.status(401).json({ code: "unauthorized", message: "Invalid email/phone or password." });
       return;
     }
     if (!(await verifyPassword(String(password), user.password_hash))) {
+      await logFail();
       res.status(401).json({ code: "unauthorized", message: "Invalid email/phone or password." });
       return;
     }
     const session = await issueSession(res, user);
     await audit(store, { actorId: user.id, action: "auth.login", entity: "user", entityId: user.id, ip: clientIp(req) });
+    await store.logLoginAttempt({ email: user.email, phone: user.phone, success: true, ip: clientIp(req), user_agent: String(req.headers["user-agent"] ?? "").slice(0, 300) });
     res.json(session);
   }));
 
@@ -178,7 +188,7 @@ export function authRoutes(deps: Deps): Router {
         });
         const url = `${PUBLIC_BASE}/reset-password?token=${encodeURIComponent(token)}`;
         const m = passwordResetEmail(url);
-        sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
+        sendEmail(user.email, m.subject, m.html, { template: "password-reset-request" }).catch((e) => console.error("[brevo]", e));
         await audit(store, { actorId: user.id, action: "auth.password_reset_request", entity: "user", entityId: user.id, ip: clientIp(req) });
       }
     }
@@ -213,7 +223,7 @@ export function authRoutes(deps: Deps): Router {
     await store.deletePasswordReset(presentedHash); // single-use
     if (user.email) {
       const m = passwordChangedEmail();
-      sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
+      sendEmail(user.email, m.subject, m.html, { template: "password-changed" }).catch((e) => console.error("[brevo]", e));
     }
     await audit(store, { actorId: user.id, action: "auth.password_reset", entity: "user", entityId: user.id, ip: clientIp(req) });
     res.json({ ok: true });

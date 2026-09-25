@@ -8,6 +8,7 @@ import { Icon } from "../../components/icons";
 import { authApi, meApi, scansApi } from "../../api/client";
 import { NEPAL_MOBILE } from "../../lib/password";
 import type { PhotoAngle } from "../../api/types";
+import { PhotoChecklist } from "../../components/b3customer";
 
 const ANGLES: PhotoAngle[] = ["hairline", "crown", "parting", "temples", "shedding"];
 const CONSENT_VERSION = "photo-v3";
@@ -267,6 +268,9 @@ export default function Lens() {
       <h1>{t("lens.title")}</h1>
       <p className="muted">{t("lens.subtitle")} <b>{doneCount}/5</b></p>
       {error && <ErrorCard message={error} />}
+
+      {/* U28: pre-capture photo self-check (quality copy only, never medical) */}
+      <PhotoChecklist />
 
       {!draft.consentPhoto && (
         <div className="card" style={{ border: "2px solid var(--green)" }}>

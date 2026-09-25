@@ -4,7 +4,7 @@ import type { Store } from "../db/store";
 
 export async function audit(
   store: Store,
-  opts: { actorId?: string | null; action: string; entity: string; entityId?: string | null; ip?: string | null },
+  opts: { actorId?: string | null; action: string; entity: string; entityId?: string | null; ip?: string | null; detail?: string | null },
 ): Promise<void> {
   try {
     await store.addAudit({
@@ -13,6 +13,7 @@ export async function audit(
       entity: opts.entity,
       entity_id: opts.entityId ?? null,
       ip: opts.ip ?? null,
+      detail: opts.detail ?? null,
     });
   } catch (e) {
     // audit must never break the request path; log and continue

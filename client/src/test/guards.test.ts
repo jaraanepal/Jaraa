@@ -66,6 +66,25 @@ describe("route guards — longest-prefix matching", () => {
       expect(ok, `no reachable route for role ${role}`).toBe(true);
     }
   });
+
+  it("P-12 customer feature routes are customer-only", () => {
+    for (const p of ["/habits", "/referral", "/wishlist", "/help", "/my-data", "/my-challenges"]) {
+      expect(matchRule(p)?.roles, p).toEqual(["customer"]);
+      expect(checkAccess(anon, p), p).toBe("login");
+      expect(checkAccess(cust(), p), p).toBe("allow");
+      expect(checkAccess(cust("doctor"), p), p).toBe("forbidden");
+    }
+  });
+
+  it("P-12 doctor/admin sub-routes inherit console role prefixes", () => {
+    expect(checkAccess(cust("doctor"), "/doctor/followups")).toBe("allow");
+    expect(checkAccess(cust("doctor"), "/doctor/availability")).toBe("allow");
+    expect(checkAccess(cust(), "/doctor/followups")).toBe("forbidden");
+    for (const p of ["/admin/broadcast", "/admin/refunds", "/admin/sla", "/admin/verifications", "/admin/finance", "/admin/tickets", "/admin/articles", "/admin/kit-analytics"]) {
+      expect(checkAccess(cust("admin"), p), p).toBe("allow");
+      expect(checkAccess(cust(), p), p).toBe("forbidden");
+    }
+  });
 });
 
 describe("staff login routing (P3)", () => {

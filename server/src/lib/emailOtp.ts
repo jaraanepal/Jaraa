@@ -129,7 +129,7 @@ export class EmailOtpService {
       return "log";
     }
     const m = emailOtpEmail(code);
-    await sendEmail(email, m.subject, m.html);
+    await sendEmail(email, m.subject, m.html, { template: "email-otp-code" });
     return "brevo";
   }
 

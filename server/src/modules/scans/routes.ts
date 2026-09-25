@@ -383,7 +383,7 @@ export function scansRoutes(deps: Deps): Router {
       const profile = user ? await store.getProfile(user.id) : null;
       if (user?.email) {
         const m = scanSubmittedEmail(profile?.name);
-        sendEmail(user.email, m.subject, m.html).catch((e) => console.error("[brevo]", e));
+        sendEmail(user.email, m.subject, m.html, { template: "scan-submitted" }).catch((e) => console.error("[brevo]", e));
       }
     } catch (e) { console.error("[scan-submitted notify]", e); }
     // P-6: in-app notification (fire-and-forget)

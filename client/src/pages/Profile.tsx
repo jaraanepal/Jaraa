@@ -5,6 +5,18 @@ import { meApi } from "../api/client";
 import type { Address } from "../api/types";
 import { apiErrorMessage, ErrorCard, Loading, toast } from "../components/ui";
 import { Icon } from "../components/icons";
+import { LeaderboardOptIn, LoyaltyCard } from "../components/b3customer";
+import {
+  ConsentHistory,
+  DataExportCard,
+  FeedbackForm,
+  PreferencesCard,
+  ProfileCompletion,
+  ReferralCard,
+  SessionsCard,
+  TextSizeControl,
+  TourReplay,
+} from "../components/b4customer";
 
 const AGE_BANDS = ["16-22", "23-29", "30-39", "40-49", "50+"] as const;
 const GENDERS = ["female", "male", "other"] as const;
@@ -65,6 +77,14 @@ export default function Profile() {
   const [addrBusy, setAddrBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Batch-2 (008): notification prefs (U17), dark mode (U18),
+  // delivery instructions (U19), emergency contacts (U20).
+  const [prefs, setPrefs] = useState({ plan_updates: true, photo_requests: true, digest: false, marketing: false });
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
+  const [delivery, setDelivery] = useState("");
+  const [contacts, setContacts] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const [cName, setCName] = useState("");
+  const [cPhone, setCPhone] = useState("");
 
   // Hydrate the form once the profile loads.
   useEffect(() => {
@@ -73,14 +93,21 @@ export default function Profile() {
       setAgeBand(profile.age_band ?? "");
       setGender(profile.gender ?? "");
       setAddresses(profile.addresses ?? []);
+      setDelivery(profile.delivery_instructions ?? "");
     }
+    meApi.getNotificationPrefs().then((r) => setPrefs({
+      plan_updates: r.plan_updates, photo_requests: r.photo_requests,
+      digest: r.digest, marketing: r.marketing,
+    })).catch(() => {});
+    meApi.listEmergencyContacts().then((r) => setContacts(r.contacts)).catch(() => {});
   }, [profile?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveDetails() {
     setSaving(true);
     setError(null);
     try {
-      const patch: { name?: string; age_band?: "16-22" | "23-29" | "30-39" | "40-49" | "50+"; gender?: "female" | "male" | "other" } = {};
+      const patch: { name?: string; age_band?: "16-22" | "23-29" | "30-39" | "40-49" | "50+"; gender?: "female" | "male" | "other"; delivery_instructions?: string } = {};
+      patch.delivery_instructions = delivery;
       if (name.trim()) patch.name = name.trim();
       if (AGE_BANDS.includes(ageBand as typeof AGE_BANDS[number])) patch.age_band = ageBand as typeof patch.age_band;
       if (GENDERS.includes(gender as typeof GENDERS[number])) patch.gender = gender as typeof patch.gender;
@@ -198,6 +225,34 @@ export default function Profile() {
     }
   }
 
+  async function togglePref(key: keyof typeof prefs) {
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    try { await meApi.setNotificationPrefs(next); }
+    catch (e) { setPrefs(prefs); setError(apiErrorMessage(t, e)); }
+  }
+  function toggleDark() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.dataset.theme = next ? "dark" : "light";
+    try { localStorage.setItem("jaraa-theme", next ? "dark" : "light"); } catch { /* ignore */ }
+  }
+  async function addContact() {
+    if (!cName.trim() || !cPhone.trim()) return;
+    try {
+      const r = await meApi.createEmergencyContact({ name: cName.trim(), phone: cPhone.trim() });
+      setContacts((v) => [...v, r]);
+      setCName(""); setCPhone("");
+      toast(t("p12b.customer.saved"));
+    } catch (e) { setError(apiErrorMessage(t, e)); }
+  }
+  async function removeContact(id: string) {
+    try {
+      await meApi.deleteEmergencyContact(id);
+      setContacts((v) => v.filter((c) => c.id !== id));
+    } catch (e) { setError(apiErrorMessage(t, e)); }
+  }
+
   if (profileLoading && !profile) return <Loading />;
 
   const initial = (profile?.name ?? "?").trim().charAt(0).toUpperCase() || "?";
@@ -240,6 +295,12 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* U30: profile completion meter (batch 4) */}
+      <ProfileCompletion />
+
+      {/* U25: loyalty wallet */}
+      <LoyaltyCard />
+
       {/* Details */}
       <div className="card">
         <h2>{t("profile.details")}</h2>
@@ -267,10 +328,21 @@ export default function Profile() {
             </button>
           ))}
         </div>
+        <label className="fl" htmlFor="deliv">{t("p12b.customer.delivery")}</label>
+        <textarea
+          id="deliv" value={delivery} onChange={(e) => setDelivery(e.target.value)}
+          placeholder={t("p12b.customer.deliveryPh")} rows={2} maxLength={500}
+        />
         <button className="btn btn-p" disabled={saving} onClick={saveDetails}>
           {saving ? t("profile.saving") : t("common.save")}
         </button>
       </div>
+
+      {/* U30/U46: content-language + default payment (batch 4) */}
+      <PreferencesCard />
+
+      {/* U32: referrals (batch 4) */}
+      <ReferralCard />
 
       {/* Addresses */}
       <div className="card">
@@ -318,6 +390,73 @@ export default function Profile() {
             {t("profile.addAddress")}
           </button>
         )}
+      </div>
+
+      {/* U37: app feedback (batch 4) */}
+      <FeedbackForm />
+
+      {/* U36: consent history (batch 4) */}
+      <ConsentHistory />
+
+      {/* U45: signed-in sessions (batch 4) */}
+      <SessionsCard />
+
+      {/* U44: data export incl. photo link (batch 4) */}
+      <DataExportCard />
+
+      {/* U47: text size (batch 4) */}
+      <TextSizeControl />
+
+      {/* U38: app tour (batch 4) */}
+      <div className="card">
+        <h2>{t("p12d.customer.tourTitle")}</h2>
+        <TourReplay />
+      </div>
+
+      {/* U17: notification preferences */}
+      <div className="card">
+        <h2>{t("p12b.customer.notifs")}</h2>
+        {(["plan_updates", "photo_requests", "digest", "marketing"] as const).map((k) => (
+          <label className="rowflex" key={k} style={{ margin: "8px 0" }}>
+            <input
+              type="checkbox" checked={prefs[k]} onChange={() => togglePref(k)}
+              style={{ width: 28, height: 28, minHeight: 28 }}
+            />
+            <span>{t(`p12b.customer.pref.${k}`)}</span>
+          </label>
+        ))}
+        {/* C19: streak-board leaderboard opt-in */}
+        <h2>{t("p12c.customer.leaderboard.title")}</h2>
+        <LeaderboardOptIn />
+      </div>
+
+      {/* U18: dark mode */}
+      <div className="card">
+        <h2>{t("p12b.customer.appearance")}</h2>
+        <label className="rowflex" style={{ margin: "8px 0" }}>
+          <input
+            type="checkbox" checked={dark} onChange={toggleDark}
+            style={{ width: 28, height: 28, minHeight: 28 }}
+          />
+          <span>{t("p12b.customer.darkMode")}</span>
+        </label>
+      </div>
+
+      {/* U20: emergency contacts */}
+      <div className="card">
+        <h2>{t("p12b.customer.emergency")}</h2>
+        <div className="formrow inline">
+          <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder={t("p12b.customer.contactNamePh")} maxLength={120} />
+          <input value={cPhone} onChange={(e) => setCPhone(e.target.value)} placeholder={t("p12b.customer.phonePh")} maxLength={40} />
+          <button className="btn" disabled={!cName.trim() || !cPhone.trim()} onClick={addContact}>{t("common.add")}</button>
+        </div>
+        {contacts.map((c) => (
+          <div className="rowflex" key={c.id} style={{ margin: "8px 0" }}>
+            <div><strong>{c.name}</strong> <span className="muted tiny">{c.phone}</span></div>
+            <span className="spacer" />
+            <button className="btn btn-g btn-s" onClick={() => removeContact(c.id)}>{t("common.delete")}</button>
+          </div>
+        ))}
       </div>
     </div>
   );

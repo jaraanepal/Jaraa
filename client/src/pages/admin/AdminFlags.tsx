@@ -6,8 +6,122 @@ import { useAsync } from "../../components/useAsync";
 import enDict from "../../i18n/en.json";
 import neDict from "../../i18n/ne.json";
 import type { FeatureFlag, ScanRule } from "../../api/types";
+import {
+  flagHistory, getDashboardConfig, setDashboardConfig,
+  type FlagHistoryEntry, type DashboardConfig,
+} from "../../api/b4admin";
 
-type Tab = "flags" | "rules";
+const K4 = "p12d.admin";
+
+type Tab = "flags" | "rules" | "history" | "dashconfig";
+
+/** Known dashboard cards per role (A30) — the config stores { hiddenCards: [...] }. */
+const ROLE_CARDS: Record<string, string[]> = {
+  doctor: ["workload", "queue", "sla", "reviews"],
+  admin: ["users", "orders", "kits", "flags", "audit", "moderation"],
+  pharmacy: ["orders", "stock", "couriers", "claims"],
+  coach: ["clients", "checkins", "escalations", "nudges"],
+  customer: ["scan", "plan", "kits", "reminders"],
+};
+
+/** A35 — feature-flag change history from the audit log. */
+function FlagHistoryTab() {
+  const { t } = useLang();
+  const { data, error, loading, retry } = useAsync(() => flagHistory(100).then((r) => r.history));
+  if (loading) return <Loading />;
+  if (error) return <ErrorCard message={apiErrorMessage(t, error)} onRetry={retry} />;
+  const rows: FlagHistoryEntry[] = data ?? [];
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>{t(`${K4}.flagHistory.title`)}</h3>
+      {rows.length === 0 ? (
+        <p className="tiny muted">{t(`${K4}.flagHistory.empty`)}</p>
+      ) : (
+        rows.map((h) => (
+          <p key={h.id} className="tiny">
+            {h.at.slice(0, 16).replace("T", " ")} — <b>{h.action}</b> — {h.entity_id} —{" "}
+            {(h.actor_id ?? "").slice(0, 8)}
+          </p>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** A30 — per-role dashboard card toggles. */
+function DashboardConfigTab() {
+  const { t } = useLang();
+  const [role, setRole] = useState("admin");
+  const [hidden, setHidden] = useState<string[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const { error, loading, retry } = useAsync(() =>
+    getDashboardConfig(role).then((r) => {
+      const cfg: DashboardConfig | null = r.config;
+      const h = (cfg?.config as { hiddenCards?: unknown } | undefined)?.hiddenCards;
+      setHidden(Array.isArray(h) ? h.filter((x): x is string => typeof x === "string") : []);
+      return true;
+    }), [role]);
+  const errMsg = err ?? (error ? apiErrorMessage(t, error) : null);
+
+  function toggle(card: string) {
+    setHidden((p) => {
+      const cur = p ?? [];
+      return cur.includes(card) ? cur.filter((c) => c !== card) : [...cur, card];
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    try {
+      await setDashboardConfig(role, { hiddenCards: hidden ?? [] });
+      toast(t(`${K4}.dashboardConfig.saved`));
+    } catch (e) {
+      setErr(apiErrorMessage(t, e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cards = ROLE_CARDS[role] ?? [];
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>{t(`${K4}.dashboardConfig.title`)}</h3>
+      <label className="fl">{t(`${K4}.dashboardConfig.role`)}</label>
+      <div className="filterrow">
+        <select value={role} onChange={(e) => { setRole(e.target.value); setHidden(null); }}>
+          {Object.keys(ROLE_CARDS).map((r) => (
+            <option key={r} value={r}>{t(`roles.${r}`)}</option>
+          ))}
+        </select>
+      </div>
+      {errMsg && <ErrorCard message={errMsg} onRetry={() => { setErr(null); retry(); }} />}
+      {loading || hidden === null ? (
+        <Loading />
+      ) : (
+        <>
+          <p className="tiny muted">{t(`${K4}.dashboardConfig.note`)}</p>
+          {cards.map((c) => (
+            <label className="rowflex" key={c} style={{ margin: "10px 0" }}>
+              <input type="checkbox" checked={!hidden.includes(c)} onChange={() => toggle(c)} />
+              <span>
+                <b>{t(`${K4}.cards.${c}`)}</b>{" "}
+                <span className={`chip${hidden.includes(c) ? " muted" : ""}`}>
+                  {hidden.includes(c) ? t(`${K4}.dashboardConfig.hidden`) : t(`${K4}.dashboardConfig.shown`)}
+                </span>
+              </span>
+            </label>
+          ))}
+          <button className="btn" disabled={saving} onClick={save}>
+            {saving ? "…" : t(`${K4}.dashboardConfig.save`)}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** Flag label/description live in the dict as [label, desc] pairs. */
 function flagCopy(lang: "ne" | "en", key: string): [string, string] {
@@ -67,9 +181,12 @@ export default function AdminFlags() {
       {saveError && <ErrorCard message={saveError} onRetry={() => setSaveError(null)} />}
 
       <div className="tabrow" role="tablist">
-        {(["flags", "rules"] as Tab[]).map((x) => (
+        {(["flags", "rules", "history", "dashconfig"] as Tab[]).map((x) => (
           <button key={x} className={`tab${tab === x ? " on" : ""}`} onClick={() => setTab(x)} role="tab" aria-selected={tab === x}>
-            {x === "flags" ? t("admin.flagsTitle") : t("admin.rulesTitle")}
+            {x === "flags" ? t("admin.flagsTitle")
+              : x === "rules" ? t("admin.rulesTitle")
+              : x === "history" ? t(`${K4}.flagHistory.title`)
+              : t(`${K4}.dashboardConfig.title`)}
           </button>
         ))}
       </div>
@@ -134,6 +251,9 @@ export default function AdminFlags() {
             ))}
         </div>
       )}
+
+      {tab === "history" && <FlagHistoryTab />}
+      {tab === "dashconfig" && <DashboardConfigTab />}
     </div>
   );
 }

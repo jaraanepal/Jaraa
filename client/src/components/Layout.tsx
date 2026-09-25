@@ -6,6 +6,7 @@ import { useFlags } from "../auth/FlagsContext";
 import { Icon } from "./icons";
 import { Modal, ToastHost } from "./ui";
 import NotifBell from "./NotifBell";
+import { OfflineBanner } from "./b4customer";
 
 function EscapeHatch() {
   const { t } = useLang();
@@ -182,29 +183,49 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
           { to: "/admin/users", key: "drawer.users", icon: Icon.user },
           { to: "/admin/flags", key: "admin.flagsTitle", icon: Icon.alert },
           { to: "/admin/audit", key: "admin.auditTitle", icon: Icon.doc },
+          { to: "/admin/broadcast", key: "p12.admin.broadcast", icon: Icon.chat },
+          { to: "/admin/refunds", key: "p12.admin.refunds", icon: Icon.chart },
+          { to: "/admin/sla", key: "p12.admin.sla", icon: Icon.clock },
+          { to: "/admin/verifications", key: "p12.admin.verification", icon: Icon.check },
+          { to: "/admin/finance", key: "p12.admin.finance", icon: Icon.chart },
+          { to: "/admin/tickets", key: "p12.admin.tickets", icon: Icon.chat },
+          { to: "/admin/articles", key: "p12.admin.articles", icon: Icon.book },
+          { to: "/admin/kit-analytics", key: "p12.admin.kitAnalytics", icon: Icon.box },
+          { to: "/admin/tools", key: "p12b.admin.title", icon: Icon.gear },
           { to: "/admin/profile", key: "nav.profile", icon: Icon.user },
         ]
       : role === "doctor"
         ? [
             { to: "/doctor", key: "nav.doctor", icon: Icon.doc, end: true },
             { to: "/doctor/reviewed", key: "doctorDash.reviewedTab", icon: Icon.check },
+            { to: "/doctor/followups", key: "p12.doctor.followups", icon: Icon.chat },
+            { to: "/doctor/availability", key: "p12.doctor.availability", icon: Icon.clock },
+            { to: "/doctor/tools", key: "p12b.doctor.title", icon: Icon.gear },
             { to: "/doctor/profile", key: "nav.profile", icon: Icon.user },
           ]
         : role === "pharmacy"
           ? [
               { to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck, end: true },
+              { to: "/pharmacy/tools", key: "p12b.pharmacy.title", icon: Icon.gear },
               { to: "/pharmacy/profile", key: "nav.profile", icon: Icon.user },
             ]
           : role === "coach"
             ? [
                 { to: "/coach", key: "nav.coach", icon: Icon.book, end: true },
                 { to: "/coach/followups", key: "coachDash.followups", icon: Icon.chat },
+                { to: "/coach/tools", key: "p12b.coach.title", icon: Icon.gear },
                 { to: "/coach/profile", key: "nav.profile", icon: Icon.user },
               ]
             : [
                 { to: "/scan", key: "nav.scan", icon: Icon.scan },
                 { to: "/plan", key: "nav.plan", icon: Icon.plan },
+                { to: "/habits", key: "p12.customer.habitCheckin", icon: Icon.check },
                 { to: "/orders", key: "nav.orders", icon: Icon.truck },
+                { to: "/wishlist", key: "p12.customer.wishlist", icon: Icon.box },
+                { to: "/my-challenges", key: "p12.customer.myChallenges", icon: Icon.chart },
+                { to: "/referral", key: "p12.customer.referral", icon: Icon.user },
+                { to: "/help", key: "p12.customer.help", icon: Icon.chat },
+                { to: "/my-data", key: "p12.customer.myData", icon: Icon.doc },
                 { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
               ];
 
@@ -333,6 +354,8 @@ export default function Layout() {
 
       <main className="main">
         <InstallPrompt />
+        {/* U39: offline banner (batch 4) */}
+        <OfflineBanner />
         <Outlet />
       </main>
 
