@@ -12,7 +12,41 @@ import type {
   Challenge,
   ChallengeAssignment,
   CoachAvailability,
+  CoachMessage,
+  CoachThread,
+  CoinLedgerEntry,
   CommunityTip,
+  DietAssignment,
+  DietPlan,
+  EducationArticle,
+  FamilyMember,
+  Food,
+  HabitLog,
+  IdempotencyRecord,
+  LabBooking,
+  LabBookingStatus,
+  LabProvider,
+  LabReport,
+  LabTest,
+  Milestone,
+  QaAnswer,
+  QaFlag,
+  QaQuestion,
+  QaQuestionStatus,
+  Referral,
+  ReferralCode,
+  Refund,
+  RefundStatus,
+  ReturnRequest,
+  ShipmentEvent,
+  ShipmentEventType,
+  UserMilestone,
+  Wallet,
+  WalletTxn,
+  WalletTxnKind,
+  AiConversation,
+  AiMessage,
+  ArticleView,
   CoachFeedback, StreakFreeze, CustomerTag, CoachHandover, CoachTip, ChallengeSurvey, JourneyStage,
   Dispute,
   ExportSchedule,
@@ -3468,6 +3502,637 @@ async markArticleAssignmentRead(id: string) {
       created_at: t.created_at as string,
       last_used_at: null,
     }));
+  }
+
+  /* ================= P-5..P-17 (v1.4 backend) ================= */
+
+  // ---- P-5: returns + customer-visible refunds ----
+  async createReturnRequest(r: { order_id: string; user_id: string; reason: string }) {
+    const { data, error } = await this.sb.from("return_requests")
+      .insert({ order_id: r.order_id, user_id: r.user_id, reason: r.reason })
+      .select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listReturnRequestsByUser(userId: string) {
+    const { data, error } = await this.sb.from("return_requests").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async listReturnRequests(status?: string) {
+    let q = this.sb.from("return_requests").select("*");
+    if (status) q = q.eq("status", status);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async updateReturnRequest(id: string, patch: { status: ReturnRequest["status"]; decided_by?: string | null }) {
+    const upd: Record<string, unknown> = { status: patch.status, decided_at: new Date().toISOString() };
+    if (patch.decided_by !== undefined) upd.decided_by = patch.decided_by;
+    const { data, error } = await this.sb.from("return_requests")
+      .update(upd).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async listRefundsByUser(userId: string) {
+    const { data: orders, error: e1 } = await this.sb.from("orders").select("id").eq("user_id", userId);
+    if (e1) throw e1;
+    const ids = (orders ?? []).map((o) => o.id as string);
+    if (ids.length === 0) return [];
+    const { data, error } = await this.sb.from("refunds").select("*")
+      .in("order_id", ids).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async updateRefundStatus(id: string, status: RefundStatus, decidedBy: string) {
+    // NOTE: refunds has no decided_by/decided_at column (012 only adds status);
+    // the decider is expected to be recorded in the audit log by the route.
+    void decidedBy;
+    const { data, error } = await this.sb.from("refunds")
+      .update({ status }).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // ---- P-6: labs ----
+  async createLabProvider(p: { name_en: string; name_ne?: string | null; note?: string | null }) {
+    const { data, error } = await this.sb.from("lab_providers")
+      .insert({ name_en: p.name_en, name_ne: p.name_ne ?? null, note: p.note ?? null })
+      .select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listLabProviders() {
+    const { data, error } = await this.sb.from("lab_providers").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async createLabTest(t: { provider_id?: string | null; name_en: string; name_ne?: string | null; description_en?: string | null; description_ne?: string | null; price_npr: number }) {
+    const { data, error } = await this.sb.from("lab_tests")
+      .insert({
+        provider_id: t.provider_id ?? null, name_en: t.name_en, name_ne: t.name_ne ?? null,
+        description_en: t.description_en ?? null, description_ne: t.description_ne ?? null,
+        price_npr: t.price_npr,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listLabTests(activeOnly: boolean) {
+    let q = this.sb.from("lab_tests").select("*");
+    if (activeOnly) q = q.eq("is_active", true);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async getLabTest(id: string) {
+    const { data } = await this.sb.from("lab_tests").select("*").eq("id", id).maybeSingle();
+    return data;
+  }
+  async updateLabTest(id: string, patch: Partial<Pick<LabTest, "name_en" | "name_ne" | "description_en" | "description_ne" | "price_npr" | "is_active">>) {
+    const { data, error } = await this.sb.from("lab_tests")
+      .update(patch).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async createLabBooking(b: { user_id: string; test_id: string; scheduled_on?: string | null; slot?: string | null; address: Record<string, unknown>; phone: string }) {
+    const { data, error } = await this.sb.from("lab_bookings")
+      .insert({
+        user_id: b.user_id, test_id: b.test_id,
+        scheduled_on: b.scheduled_on ?? null, slot: b.slot ?? null,
+        address: b.address, phone: b.phone,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listLabBookingsByUser(userId: string) {
+    const { data, error } = await this.sb.from("lab_bookings").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async listLabBookings(status?: string) {
+    let q = this.sb.from("lab_bookings").select("*");
+    if (status) q = q.eq("status", status);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async getLabBooking(id: string) {
+    const { data } = await this.sb.from("lab_bookings").select("*").eq("id", id).maybeSingle();
+    return data;
+  }
+  async updateLabBookingStatus(id: string, status: LabBookingStatus) {
+    const { data, error } = await this.sb.from("lab_bookings")
+      .update({ status, updated_at: new Date().toISOString() }).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async attachLabReport(bookingId: string, storagePath: string, uploadedBy: string | null) {
+    const { data, error } = await this.sb.from("lab_reports")
+      .insert({ booking_id: bookingId, storage_path: storagePath, uploaded_by: uploadedBy })
+      .select().single();
+    if (error) throw error;
+    const { error: e2 } = await this.sb.from("lab_bookings")
+      .update({ status: "report_ready", updated_at: new Date().toISOString() }).eq("id", bookingId);
+    if (e2) throw e2;
+    return data;
+  }
+  async getLabReport(bookingId: string) {
+    const { data } = await this.sb.from("lab_reports").select("*").eq("booking_id", bookingId).maybeSingle();
+    return data;
+  }
+
+  // ---- P-7: family profiles ----
+  async createFamilyMember(m: { owner_id: string; name: string; relation?: string | null }) {
+    const { data, error } = await this.sb.from("family_members")
+      .insert({
+        owner_id: m.owner_id, name: m.name, relation: m.relation ?? null,
+        invite_token: randomUUID().replace(/-/g, ""),
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listFamilyMembers(ownerId: string) {
+    const { data, error } = await this.sb.from("family_members").select("*")
+      .eq("owner_id", ownerId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async getFamilyMember(id: string) {
+    const { data } = await this.sb.from("family_members").select("*").eq("id", id).maybeSingle();
+    return data;
+  }
+  async getFamilyMemberByToken(token: string) {
+    const { data } = await this.sb.from("family_members").select("*").eq("invite_token", token).maybeSingle();
+    return data;
+  }
+  async acceptFamilyInvite(token: string, memberUserId: string) {
+    const { data: row } = await this.sb.from("family_members")
+      .select("*").eq("invite_token", token).maybeSingle();
+    if (!row || row.status !== "invited") return null;
+    const { data, error } = await this.sb.from("family_members")
+      .update({ member_user_id: memberUserId, status: "active", invite_token: null })
+      .eq("id", row.id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async setFamilyMemberShare(id: string, shared: boolean) {
+    const { data, error } = await this.sb.from("family_members")
+      .update({ data_shared: shared }).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async removeFamilyMember(id: string) {
+    const { data, error } = await this.sb.from("family_members").delete().eq("id", id).select("id");
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  }
+
+  // ---- P-8: idempotency + sync ----
+  async getIdempotencyRecord(key: string, userId: string, scope: string) {
+    const { data } = await this.sb.from("idempotency_keys").select("*")
+      .eq("key", key).eq("user_id", userId).eq("scope", scope).maybeSingle();
+    return data;
+  }
+  async saveIdempotencyRecord(r: { key: string; user_id: string; scope: string; response: unknown }) {
+    const { error } = await this.sb.from("idempotency_keys")
+      .insert({ key: r.key, user_id: r.user_id, scope: r.scope, response: r.response });
+    if (error) {
+      if ((error as { code?: string }).code === "23505") return; // replay: already recorded
+      throw error;
+    }
+  }
+
+  // ---- P-9: AI assistant ----
+  async createAiConversation(userId: string) {
+    const { data, error } = await this.sb.from("ai_conversations")
+      .insert({ user_id: userId }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listAiConversations(userId: string) {
+    const { data, error } = await this.sb.from("ai_conversations").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async addAiMessage(conversationId: string, role: "user" | "assistant", body: string, redFlagged?: boolean) {
+    const { data, error } = await this.sb.from("ai_messages")
+      .insert({ conversation_id: conversationId, role, body, red_flagged: redFlagged ?? false })
+      .select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listAiMessages(conversationId: string) {
+    const { data, error } = await this.sb.from("ai_messages").select("*")
+      .eq("conversation_id", conversationId).order("created_at", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-10/P-11: content ----
+  async listPublishedArticles(category?: string) {
+    let q = this.sb.from("education_articles").select("*").eq("is_published", true);
+    if (category) q = q.eq("category", category);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async recordArticleView(articleId: string, userId: string) {
+    const { error } = await this.sb.from("article_views")
+      .insert({ article_id: articleId, user_id: userId });
+    if (error) {
+      if ((error as { code?: string }).code === "23505") return; // already viewed: idempotent
+      throw error;
+    }
+  }
+  async getArticleViewCount(articleId: string) {
+    const { count, error } = await this.sb.from("article_views")
+      .select("id", { count: "exact", head: true }).eq("article_id", articleId);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  // ---- P-12: community Q&A ----
+  async createQaQuestion(userId: string, title: string, body: string) {
+    const { data, error } = await this.sb.from("qa_questions")
+      .insert({ user_id: userId, title, body }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listQaQuestions(opts: { status?: string; limit: number; offset: number }) {
+    let q = this.sb.from("qa_questions").select("*", { count: "exact" });
+    if (opts.status) q = q.eq("status", opts.status);
+    const { data, error, count } = await q
+      .order("created_at", { ascending: false })
+      .range(opts.offset, opts.offset + opts.limit - 1);
+    if (error) throw error;
+    return { questions: data ?? [], total: count ?? 0 };
+  }
+  async getQaQuestion(id: string) {
+    const { data } = await this.sb.from("qa_questions").select("*").eq("id", id).maybeSingle();
+    return data;
+  }
+  async updateQaQuestionStatus(id: string, status: QaQuestionStatus) {
+    const { data, error } = await this.sb.from("qa_questions")
+      .update({ status, updated_at: new Date().toISOString() }).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async createQaAnswer(questionId: string, doctorId: string, body: string) {
+    const { data, error } = await this.sb.from("qa_answers")
+      .insert({ question_id: questionId, doctor_id: doctorId, body }).select().single();
+    if (error) throw error;
+    return { ...data, agree_count: 0, helpful_count: 0 };
+  }
+  async listQaAnswers(questionId: string) {
+    const { data, error } = await this.sb.from("qa_answers").select("*")
+      .eq("question_id", questionId).order("created_at", { ascending: true });
+    if (error) throw error;
+    const answers = data ?? [];
+    if (answers.length === 0) return [];
+    const ids = answers.map((a) => a.id as string);
+    const { data: agrees, error: e1 } = await this.sb.from("qa_answer_agrees")
+      .select("answer_id").in("answer_id", ids);
+    if (e1) throw e1;
+    const { data: helpfuls, error: e2 } = await this.sb.from("qa_helpfulness")
+      .select("answer_id").in("answer_id", ids).eq("helpful", true);
+    if (e2) throw e2;
+    const agreeCounts = new Map<string, number>();
+    for (const r of agrees ?? []) agreeCounts.set(r.answer_id as string, (agreeCounts.get(r.answer_id as string) ?? 0) + 1);
+    const helpfulCounts = new Map<string, number>();
+    for (const r of helpfuls ?? []) helpfulCounts.set(r.answer_id as string, (helpfulCounts.get(r.answer_id as string) ?? 0) + 1);
+    return answers.map((a) => ({
+      ...a,
+      agree_count: agreeCounts.get(a.id as string) ?? 0,
+      helpful_count: helpfulCounts.get(a.id as string) ?? 0,
+    }));
+  }
+  async agreeQaAnswer(answerId: string, doctorId: string) {
+    const { error } = await this.sb.from("qa_answer_agrees")
+      .insert({ answer_id: answerId, doctor_id: doctorId });
+    if (error) {
+      if ((error as { code?: string }).code === "23505") return false; // already agreed
+      throw error;
+    }
+    return true;
+  }
+  async setQaHelpful(answerId: string, userId: string, helpful: boolean) {
+    const { error } = await this.sb.from("qa_helpfulness")
+      .upsert({ answer_id: answerId, user_id: userId, helpful }, { onConflict: "answer_id,user_id" });
+    if (error) throw error;
+  }
+  async flagQaContent(f: { question_id?: string | null; answer_id?: string | null; user_id: string; reason: string }) {
+    const { data, error } = await this.sb.from("qa_flags")
+      .insert({
+        question_id: f.question_id ?? null, answer_id: f.answer_id ?? null,
+        user_id: f.user_id, reason: f.reason,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listQaFlags() {
+    const { data, error } = await this.sb.from("qa_flags").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-13: referrals + coins ----
+  async getOrCreateReferralCode(userId: string) {
+    const { data: existing } = await this.sb.from("referral_codes")
+      .select("*").eq("user_id", userId).maybeSingle();
+    if (existing) return existing;
+    const code = "JARAA-" + randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+    const { data, error } = await this.sb.from("referral_codes")
+      .insert({ user_id: userId, code }).select().single();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        // race: code or row already exists — re-read
+        const { data: retry } = await this.sb.from("referral_codes")
+          .select("*").eq("user_id", userId).maybeSingle();
+        if (retry) return retry;
+      }
+      throw error;
+    }
+    return data;
+  }
+  async getReferralCode(code: string) {
+    const { data } = await this.sb.from("referral_codes").select("*").eq("code", code).maybeSingle();
+    return data;
+  }
+  async applyReferralCode(referredId: string, code: string) {
+    const { data: existing } = await this.sb.from("referrals")
+      .select("*").eq("referred_id", referredId).maybeSingle();
+    if (existing) return existing;
+    const codeRow = await this.getReferralCode(code);
+    if (!codeRow) throw new Error("Referral code not found");
+    const { data, error } = await this.sb.from("referrals")
+      .insert({ referrer_id: codeRow.user_id, referred_id: referredId, code, status: "pending" })
+      .select().single();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        // race: referral already created — re-read
+        const { data: retry } = await this.sb.from("referrals")
+          .select("*").eq("referred_id", referredId).maybeSingle();
+        if (retry) return retry;
+      }
+      throw error;
+    }
+    return data;
+  }
+  async completeReferralForUser(referredId: string) {
+    const { data: pending } = await this.sb.from("referrals").select("*")
+      .eq("referred_id", referredId).eq("status", "pending").maybeSingle();
+    if (!pending) return null;
+    const { data, error } = await this.sb.from("referrals")
+      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .eq("id", pending.id).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async grantCoins(userId: string, amount: number, reason: string, refType?: string | null, refId?: string | null) {
+    const { data, error } = await this.sb.from("coin_ledger")
+      .insert({ user_id: userId, amount, reason, ref_type: refType ?? null, ref_id: refId ?? null })
+      .select().single();
+    if (error) throw error;
+    return data;
+  }
+  async getCoinBalance(userId: string) {
+    const { data, error } = await this.sb.from("coin_ledger").select("amount").eq("user_id", userId);
+    if (error) throw error;
+    return (data ?? []).reduce((sum, r) => sum + (r.amount as number), 0);
+  }
+  async listCoinLedger(userId: string, limit: number) {
+    const { data, error } = await this.sb.from("coin_ledger").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-14: wallet ----
+  async getOrCreateWallet(userId: string) {
+    const { data: existing } = await this.sb.from("wallets")
+      .select("*").eq("user_id", userId).maybeSingle();
+    if (existing) return existing;
+    const { data, error } = await this.sb.from("wallets")
+      .insert({ user_id: userId }).select().single();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        const { data: retry } = await this.sb.from("wallets")
+          .select("*").eq("user_id", userId).maybeSingle();
+        if (retry) return retry;
+      }
+      throw error;
+    }
+    return data;
+  }
+  async addWalletTxn(userId: string, amountNpr: number, kind: WalletTxnKind, ref?: string | null) {
+    const wallet = await this.getOrCreateWallet(userId);
+    const { data, error } = await this.sb.from("wallet_txns")
+      .insert({ wallet_id: wallet.id, amount_npr: amountNpr, kind, ref: ref ?? null })
+      .select().single();
+    if (error) throw error;
+    const { error: e2 } = await this.sb.from("wallets")
+      .update({ balance_npr: wallet.balance_npr + amountNpr, updated_at: new Date().toISOString() })
+      .eq("id", wallet.id);
+    if (e2) throw e2;
+    return data;
+  }
+  async listWalletTxns(userId: string, limit: number) {
+    const wallet = await this.getOrCreateWallet(userId);
+    const { data, error } = await this.sb.from("wallet_txns").select("*")
+      .eq("wallet_id", wallet.id).order("created_at", { ascending: false }).limit(limit);
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-15: shipment tracking ----
+  async addShipmentEvent(orderId: string, e: { event_type: ShipmentEventType; label_en?: string | null; label_ne?: string | null; location?: string | null }) {
+    const { data, error } = await this.sb.from("shipment_events")
+      .insert({
+        order_id: orderId, event_type: e.event_type,
+        label_en: e.label_en ?? null, label_ne: e.label_ne ?? null,
+        location: e.location ?? null,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listShipmentEvents(orderId: string) {
+    const { data, error } = await this.sb.from("shipment_events").select("*")
+      .eq("order_id", orderId).order("created_at", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-16: nutrition ----
+  async searchFoods(q: string, limit: number) {
+    // strip commas — PostgREST .or() uses commas as condition separators
+    const safe = q.replace(/,/g, "").trim();
+    const pattern = `%${safe}%`;
+    const { data, error } = await this.sb.from("foods").select("*")
+      .or(`name_en.ilike.${pattern},name_ne.ilike.${pattern},name_ro.ilike.${pattern}`)
+      .limit(limit);
+    if (error) throw error;
+    return data ?? [];
+  }
+  async createDietPlan(p: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; protein_target_g?: number | null; items?: unknown[]; created_by?: string | null }) {
+    const { data, error } = await this.sb.from("diet_plans")
+      .insert({
+        title_en: p.title_en, title_ne: p.title_ne ?? null, title_ro: p.title_ro ?? null,
+        description_en: p.description_en ?? null, description_ne: p.description_ne ?? null,
+        protein_target_g: p.protein_target_g ?? null, items: p.items ?? [],
+        created_by: p.created_by ?? null,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listDietPlans(activeOnly: boolean) {
+    let q = this.sb.from("diet_plans").select("*");
+    if (activeOnly) q = q.eq("is_active", true);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async getDietPlan(id: string) {
+    const { data } = await this.sb.from("diet_plans").select("*").eq("id", id).maybeSingle();
+    return data;
+  }
+  async updateDietPlan(id: string, patch: Partial<Pick<DietPlan, "title_en" | "title_ne" | "title_ro" | "description_en" | "description_ne" | "protein_target_g" | "items" | "is_active">>) {
+    const { data, error } = await this.sb.from("diet_plans")
+      .update(patch).eq("id", id).select().maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async assignDietPlan(planId: string, userId: string, assignedBy: string | null, startsOn?: string | null) {
+    const { data, error } = await this.sb.from("diet_assignments")
+      .insert({
+        plan_id: planId, user_id: userId,
+        assigned_by: assignedBy, starts_on: startsOn ?? null,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async getDietAssignment(userId: string) {
+    const { data: a } = await this.sb.from("diet_assignments").select("*")
+      .eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (!a) return null;
+    const { data: plan } = await this.sb.from("diet_plans").select("*").eq("id", a.plan_id).maybeSingle();
+    return { ...a, plan: plan ?? null };
+  }
+  async logHabit(userId: string, logDate: string, habitKey: string, done: boolean, note?: string | null) {
+    const { data, error } = await this.sb.from("habit_logs")
+      .upsert(
+        { user_id: userId, log_date: logDate, habit_key: habitKey, done, note: note ?? null },
+        { onConflict: "user_id,log_date,habit_key" },
+      ).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listHabitLogs(userId: string, from: string, to: string) {
+    const { data, error } = await this.sb.from("habit_logs").select("*")
+      .eq("user_id", userId).gte("log_date", from).lte("log_date", to)
+      .order("log_date", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  // ---- P-17: milestones + coach messaging ----
+  async createMilestone(m: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; kind?: string; threshold?: number | null; created_by?: string | null }) {
+    const { data, error } = await this.sb.from("milestones")
+      .insert({
+        title_en: m.title_en, title_ne: m.title_ne ?? null, title_ro: m.title_ro ?? null,
+        description_en: m.description_en ?? null, description_ne: m.description_ne ?? null,
+        kind: m.kind ?? "custom", threshold: m.threshold ?? null,
+        created_by: m.created_by ?? null,
+      }).select().single();
+    if (error) throw error;
+    return data;
+  }
+  async listMilestones(activeOnly: boolean) {
+    let q = this.sb.from("milestones").select("*");
+    if (activeOnly) q = q.eq("is_active", true);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  async awardMilestone(milestoneId: string, userId: string) {
+    const { data, error } = await this.sb.from("user_milestones")
+      .insert({ milestone_id: milestoneId, user_id: userId }).select().single();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") return null; // already awarded
+      throw error;
+    }
+    return data;
+  }
+  async listUserMilestones(userId: string) {
+    const { data, error } = await this.sb.from("user_milestones").select("*")
+      .eq("user_id", userId).order("achieved_at", { ascending: false });
+    if (error) throw error;
+    const rows = data ?? [];
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.milestone_id as string);
+    const { data: ms, error: e2 } = await this.sb.from("milestones").select("*").in("id", ids);
+    if (e2) throw e2;
+    const byId = new Map((ms ?? []).map((m) => [m.id as string, m]));
+    return rows.map((r) => ({ ...r, milestone: (byId.get(r.milestone_id as string) ?? null) as Milestone | null }));
+  }
+  async getOrCreateCoachThread(customerId: string) {
+    const { data: existing } = await this.sb.from("coach_threads")
+      .select("*").eq("customer_id", customerId).maybeSingle();
+    if (existing) return existing;
+    const { data, error } = await this.sb.from("coach_threads")
+      .insert({ customer_id: customerId }).select().single();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        const { data: retry } = await this.sb.from("coach_threads")
+          .select("*").eq("customer_id", customerId).maybeSingle();
+        if (retry) return retry;
+      }
+      throw error;
+    }
+    return data;
+  }
+  async listCoachThreads(coachId: string) {
+    const { data, error } = await this.sb.from("coach_threads").select("*")
+      .or(`coach_id.eq.${coachId},coach_id.is.null`)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    const out: (CoachThread & { customer_name: string | null })[] = [];
+    for (const t of data ?? []) {
+      const { data: p } = await this.sb.from("profiles").select("name")
+        .eq("user_id", t.customer_id).maybeSingle();
+      out.push({ ...t, customer_name: (p?.name as string | null) ?? null });
+    }
+    return out;
+  }
+  async sendCoachMessage(threadId: string, senderId: string, senderRole: string, body: string, clientMessageId?: string | null) {
+    if (clientMessageId) {
+      const { data: existing } = await this.sb.from("coach_messages").select("*")
+        .eq("thread_id", threadId).eq("client_message_id", clientMessageId).maybeSingle();
+      if (existing) return existing;
+    }
+    const { data, error } = await this.sb.from("coach_messages")
+      .insert({
+        thread_id: threadId, sender_id: senderId, sender_role: senderRole,
+        body, client_message_id: clientMessageId ?? null,
+      }).select().single();
+    if (error) {
+      if (clientMessageId && (error as { code?: string }).code === "23505") {
+        // race: message already inserted — re-read
+        const { data: retry } = await this.sb.from("coach_messages").select("*")
+          .eq("thread_id", threadId).eq("client_message_id", clientMessageId).maybeSingle();
+        if (retry) return retry;
+      }
+      throw error;
+    }
+    return data;
+  }
+  async listCoachMessages(threadId: string) {
+    const { data, error } = await this.sb.from("coach_messages").select("*")
+      .eq("thread_id", threadId).order("created_at", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
   }
 
 // __B4_CUSTOMER_METHODS__

@@ -12,6 +12,18 @@ import { consultsRoutes } from "./modules/consults/routes";
 import { coachRoutes } from "./modules/coach/routes";
 import { adminRoutes } from "./modules/admin/routes";
 import { notificationRoutes } from "./modules/notifications/routes";
+import { aiRoutes } from "./modules/ai/routes";
+import { contentRoutes } from "./modules/content/routes";
+import { communityRoutes } from "./modules/community/routes";
+import { growthRoutes } from "./modules/growth/routes";
+import { nutritionRoutes } from "./modules/nutrition/routes";
+import { journeyRoutes } from "./modules/journey/routes";
+import { returnsRoutes } from "./modules/returns/routes";
+import { labsRoutes } from "./modules/labs/routes";
+import { familyRoutes } from "./modules/family/routes";
+import { syncRoutes } from "./modules/sync/routes";
+import { trackingRoutes } from "./modules/tracking/routes";
+import { systemRoutes } from "./modules/system/routes";
 import { errorMiddleware, notFound } from "./http";
 import { setEmailLogger } from "./lib/brevo";
 import type { Deps } from "./deps";
@@ -43,6 +55,18 @@ export function buildApp(deps: Deps, opts: AppOptions = {}) {
   api.use("/coach", coachRoutes(deps));
   api.use("/admin", adminRoutes(deps));
   api.use("/notifications", notificationRoutes(deps));
+  api.use("/ai", aiRoutes(deps));
+  api.use("/content", contentRoutes(deps));
+  api.use("/community", communityRoutes(deps));
+  api.use("/growth", growthRoutes(deps));
+  api.use("/nutrition", nutritionRoutes(deps));
+  api.use("/journey", journeyRoutes(deps));
+  api.use("/returns", returnsRoutes(deps));
+  api.use("/labs", labsRoutes(deps));
+  api.use("/family", familyRoutes(deps));
+  api.use("/sync", syncRoutes(deps));
+  api.use("/tracking", trackingRoutes(deps));
+  api.use("/app", systemRoutes(deps)); // public: no auth
   api.use("/", shopRoutes(deps)); // /kits, /orders, /payments/:provider/callback, /pharmacy/...
   app.use("/api/v1", api);
 

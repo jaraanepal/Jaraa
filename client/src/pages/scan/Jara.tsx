@@ -54,9 +54,18 @@ export default function Jara() {
     setSaving(true);
     setError(null);
     try {
-      // Answers live in the local draft; the stage transition is validated
-      // server-side. VERIFY: a dedicated Stage-3 answer persistence endpoint
-      // is not in the v1 contract — answers sync when the scan is submitted.
+      // Persist Stage-3 answers to the server (POST /scans/:id/answers) before
+      // entering Root Map: the server recomputes root scores from its own
+      // copy of the answers, so local-only answers would score as blank.
+      // 409 here means the answers raised a red flag — surface it honestly.
+      try {
+        await scansApi.saveAnswers(scanId, draft.answers as Record<string, unknown>);
+      } catch (e: any) {
+        const code = e?.code;
+        if (code === "red_flags_raised") throw e;
+        // Non-flag failures (offline etc.) must not trap the user: answers
+        // stay in the local draft and sync on the next attempt.
+      }
       await scansApi.advanceStage(scanId, "root_map");
       goStage("root_map");
     } catch (e) {

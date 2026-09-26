@@ -377,6 +377,16 @@ export function scansRoutes(deps: Deps): Router {
       sla_due_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
     });
     await store.updateScan(scan.id, { status: "submitted", version: scan.version + 1 });
+    // P-13: referral completion hook — a successfully submitted scan completes
+    // the referred user's referral and rewards BOTH sides. Never breaks submit.
+    try {
+      const ref = await store.completeReferralForUser(scan.user_id);
+      if (ref && ref.status === "completed") {
+        const REWARD = 100;
+        await store.grantCoins(ref.referrer_id, REWARD, "referral_completed", "referral", ref.id);
+        await store.grantCoins(ref.referred_id, REWARD, "referral_completed", "referral", ref.id);
+      }
+    } catch (e) { console.error("[referral hook]", e); }
     // journey email: scan submitted (fire-and-forget — a failed email must never break the request)
     try {
       const user = await store.getUserById(scan.user_id);

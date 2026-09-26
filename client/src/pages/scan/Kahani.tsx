@@ -1,376 +1,395 @@
-import { useMemo, useRef, useState } from "react";
-import { useScan } from "./ScanShell";
-import { useLang } from "../../i18n/LanguageContext";
-import { Chip, NoticeBox, toast } from "../../components/ui";
-import { Icon } from "../../components/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { scansApi } from "../../api/client";
-import type { DraftPin, ScanDraft } from "../../lib/draft";
-import type { AdaptivePath } from "../../lib/stage3";
-import type { PinType, RedFlagType } from "../../api/types";
-import { detectRedFlags, type ScanSignals } from "../../lib/redflags";
+import type { PinType, RedFlag, RedFlagType, TimelineEvent } from "../../api/types";
+import { useScan } from "./ScanShell";
+import { useAuth } from "../../auth/AuthContext";
+import { useLang } from "../../i18n/LanguageContext";
+import {
+  nextQuestion, storyBits, interviewRedFlag, interviewToAnswers, interviewToPins,
+  monthsAgoISO, monthName, ONSET_MONTHS, answersToDraft, answersFromDraft,
+  type IQ, type IQAnswers, type Script,
+} from "../../lib/hairstory";
 
-const PIN_TYPES: PinType[] = [
-  "shedding_onset", "illness_fever", "childbirth", "crash_diet",
-  "medication_change", "stress_period", "moved_city_water", "hair_treatment", "other",
-];
+/* P-1: the Kahani timeline-pin editor is replaced by a conversational,
+   branching interview. One question per screen, large answer chips,
+   skip on every question, a live "your story so far" strip, and
+   red-flag answers stop the interview for dermatologist review. */
 
-const PIN_COLORS: Record<PinType, string> = {
-  shedding_onset: "#1e3b2a", illness_fever: "#c0392b", childbirth: "#b08d4a",
-  crash_diet: "#2d9d5f", medication_change: "#7c3aed", stress_period: "#d97706",
-  moved_city_water: "#2563eb", hair_treatment: "#be5a9e", other: "#5d665e",
-};
-
-interface FuOpt { value: string; labelKey: string }
-interface Followup {
-  qid: string;
-  textKey: string;
-  type: "opts" | "slider" | "text";
-  opts?: FuOpt[];
-  min?: number; max?: number;
-  placeholderKey?: string;
+/** Merge server-raised flags ({flag_type, detail}) into client RedFlag records. */
+function mergeRaised(
+  existing: RedFlag[],
+  raised: Array<{ flag_type: string; detail: string }> | undefined,
+): RedFlag[] {
+  if (!raised?.length) return existing;
+  const seen = new Set(existing.map((f) => f.flag_type));
+  const extra: RedFlag[] = [];
+  for (const r of raised) {
+    if (seen.has(r.flag_type as RedFlagType)) continue;
+    seen.add(r.flag_type as RedFlagType);
+    extra.push({
+      id: `server-${r.flag_type}`, scan_id: "", flag_type: r.flag_type as RedFlagType,
+      detail: r.detail, created_at: new Date().toISOString(),
+    });
+  }
+  return [...existing, ...extra];
 }
 
-const PIN_FU: Record<PinType, Followup[]> = {
-  shedding_onset: [
-    { qid: "sudden", textKey: "kahani.fu.sudden", type: "opts", opts: [
-      { value: "sudden", labelKey: "kahani.fu.sudden_sudden" },
-      { value: "gradual", labelKey: "kahani.fu.sudden_gradual" },
-      { value: "unsure", labelKey: "common.notSure" }] },
-    { qid: "patches", textKey: "kahani.fu.patches", type: "opts", opts: [
-      { value: "yes", labelKey: "common.yes" }, { value: "no", labelKey: "common.no" }] },
-  ],
-  illness_fever: [
-    { qid: "ill_when", textKey: "kahani.fu.ill_when", type: "opts", opts: [
-      { value: "l3", labelKey: "kahani.fu.ill_when_l3" },
-      { value: "36", labelKey: "kahani.fu.ill_when_36" },
-      { value: "612", labelKey: "kahani.fu.ill_when_612" },
-      { value: "g12", labelKey: "kahani.fu.ill_when_g12" }] },
-    { qid: "sys_symp", textKey: "kahani.fu.sys_symp", type: "opts", opts: [
-      { value: "yes", labelKey: "common.yes" }, { value: "no", labelKey: "common.no" }] },
-  ],
-  childbirth: [
-    { qid: "birth_when", textKey: "kahani.fu.birth_when", type: "opts", opts: [
-      { value: "le12", labelKey: "kahani.fu.birth_when_le12" },
-      { value: "gt12", labelKey: "kahani.fu.birth_when_gt12" }] },
-  ],
-  crash_diet: [
-    { qid: "diet_howlong", textKey: "kahani.fu.diet_howlong", type: "opts", opts: [
-      { value: "lt3", labelKey: "kahani.fu.diet_howlong_lt3" },
-      { value: "ge3", labelKey: "kahani.fu.diet_howlong_ge3" }] },
-  ],
-  medication_change: [
-    { qid: "med_name", textKey: "kahani.fu.med_name", type: "text", placeholderKey: "kahani.fu.med_name_ph" },
-    { qid: "med_still", textKey: "kahani.fu.med_still", type: "opts", opts: [
-      { value: "yes", labelKey: "common.yes" }, { value: "no", labelKey: "common.no" }] },
-    { qid: "med_known", textKey: "kahani.fu.med_known", type: "opts", opts: [
-      { value: "yes", labelKey: "common.yes" },
-      { value: "no", labelKey: "common.no" },
-      { value: "unsure", labelKey: "common.notSure" }] },
-  ],
-  stress_period: [
-    { qid: "sleep_h", textKey: "kahani.fu.sleep_h", type: "slider", min: 3, max: 10 },
-  ],
-  moved_city_water: [
-    { qid: "move_when", textKey: "kahani.fu.move_when", type: "opts", opts: [
-      { value: "l6", labelKey: "kahani.fu.move_when_l6" },
-      { value: "g6", labelKey: "kahani.fu.move_when_g6" }] },
-  ],
-  hair_treatment: [
-    { qid: "treat_type", textKey: "kahani.fu.treat_type", type: "opts", opts: [
-      { value: "color", labelKey: "kahani.fu.treat_type_color" },
-      { value: "rebond", labelKey: "kahani.fu.treat_type_rebond" },
-      { value: "other", labelKey: "kahani.fu.treat_type_other" }] },
-  ],
-  other: [
-    { qid: "other_what", textKey: "kahani.fu.other_what", type: "text", placeholderKey: "kahani.fu.med_name_ph" },
-  ],
-};
+/** Which interview questions create a server timeline pin when answered. */
+const PIN_QUESTIONS = new Set(["onset", "ill_month", "sleep", "diet_less", "med_still", "birth_when"]);
 
-/** pos 0 (2 years ago) .. 100 (today) -> localized "N months ago" */
-function monthsAgoLabel(t: (k: string, v?: Record<string, string | number>) => string, pos: number): string {
-  const m = Math.round(((100 - pos) / 100) * 24);
-  if (m <= 0) return t("time.today");
-  if (m === 1) return t("time.oneMonthAgo");
-  if (m < 12) return t("time.nMonthsAgo", { n: m });
-  const y = Math.floor(m / 12);
-  const r = m % 12;
-  return r === 0 ? t("time.nYearsAgo", { n: y }) : t("time.nYearsNMonthsAgo", { y, m: r });
+function pinForQuestion(qid: string, a: IQAnswers): { event_type: PinType; occurred_on: string; followup_answers: Record<string, unknown> } | null {
+  const all = interviewToPins(a);
+  const want: Record<string, PinType> = {
+    onset: "shedding_onset", ill_month: "illness_fever", sleep: "stress_period",
+    diet_less: "crash_diet", med_still: "medication_change", birth_when: "childbirth",
+  };
+  const t = want[qid];
+  return all.find((p) => p.event_type === t) ?? null;
 }
 
-function dateFromPos(pos: number): string {
-  const m = Math.round(((100 - pos) / 100) * 24);
-  const d = new Date();
-  d.setMonth(d.getMonth() - m);
-  return d.toISOString().slice(0, 10);
+function derivePath(a: IQAnswers, ageBand?: string | null): "postpartum" | "stress" | "sparse" | "young" | "standard" {
+  const ev = a["events"];
+  const evs = Array.isArray(ev) ? ev : [];
+  const pins = interviewToPins(a);
+  if (evs.includes("childbirth") && a["birth_when"] === "le12") return "postpartum";
+  if (evs.includes("stress") && ["lt5", "h5_6"].includes(String(a["sleep"] ?? ""))) return "stress";
+  if (!pins.length) return "sparse";
+  if (ageBand === "16-22") return "young";
+  return "standard";
 }
 
 export default function Kahani() {
-  const { t } = useLang();
-  const { scanId, draft, updateDraft, goStage } = useScan();
-  const [selType, setSelType] = useState<PinType | null>(null);
-  const [openPinId, setOpenPinId] = useState<string | null>(null);
-  const [sliderVal, setSliderVal] = useState("7");
-  const [textVal, setTextVal] = useState("");
-  const tlRef = useRef<HTMLDivElement>(null);
+  const { scanId: id, draft, updateDraft, goStage } = useScan();
+  const { profile } = useAuth();
+  const { lang } = useLang();
 
-  const openPin = useMemo(() => draft.pins.find((p) => p.id === openPinId) ?? null, [draft.pins, openPinId]);
-  const nextFu = openPin ? (PIN_FU[openPin.type] ?? []).find((f) => openPin.answers[f.qid] === undefined) ?? null : null;
+  // Roman-Nepali when the app is in Nepali (the default), English otherwise.
+  const script: Script = lang === "ne" ? "rn" : "en";
 
-  /** Derive adaptive path + medical flag + red flags from the story so far. */
-  function evalPaths(pins: DraftPin[]): Partial<ScanDraft> {
-    const patch: Partial<ScanDraft> = {};
-    let path: AdaptivePath = draft.path === "young" ? "young" : "standard";
-    if (pins.some((p) => p.type === "childbirth" && p.answers.birth_when === "le12")) {
-      path = "postpartum";
-    } else if (pins.some((p) => p.type === "stress_period" && Number(p.answers.sleep_h) < 6)) {
-      path = "stress";
-    } else if (pins.length === 1 && pins[0].type === "shedding_onset") {
-      path = "sparse";
-    }
-    patch.path = path;
+  const [answers, setAnswers] = useState<IQAnswers>(() => answersFromDraft(draft.answers ?? {}));
+  const [multi, setMulti] = useState<string[]>([]);
+  const [text, setText] = useState("");
+  const [flags, setFlags] = useState<RedFlag[]>([]);
+  const [flagHit, setFlagHit] = useState(false);
+  const [doneMsg, setDoneMsg] = useState("");
+  const [finishWarn, setFinishWarn] = useState(false);
+  const [serverPinTypes, setServerPinTypes] = useState<Set<string>>(new Set());
+  const createdPins = useRef<Set<string>>(new Set());
+  const [history, setHistory] = useState<string[]>([]);
 
-    patch.medFlag = pins.some((p) => p.type === "medication_change" && p.answers.med_still === "yes");
+  // Load existing server pins once so resume never duplicates them.
+  useEffect(() => {
+    scansApi.getScan(id).then((d) => {
+      setServerPinTypes(new Set((d.timeline_events ?? []).map((e: TimelineEvent) => e.event_type)));
+      setFlags(d.red_flags ?? []);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-    // Client-side red-flag signals from the story. The server is authoritative
-    // (409 red_flag_unresolved); this gives instant, honest feedback in the UI.
-    const signals: ScanSignals = {
-      suddenPatchyLoss: pins.some((p) => p.type === "shedding_onset" && p.answers.patches === "yes"),
-      sheddingWithSystemic: pins.some((p) => p.type === "illness_fever" && p.answers.sys_symp === "yes"),
-      hairLossDrugStillTaking: pins.some(
-        (p) => p.type === "medication_change" && p.answers.med_still === "yes" && p.answers.med_known === "yes",
-      ),
-    };
-    const merged: RedFlagType[] = [...draft.redFlags];
-    for (const h of detectRedFlags(signals)) {
-      if (!merged.includes(h.type)) merged.push(h.type);
-    }
-    patch.redFlags = merged;
-    return patch;
+  const q: IQ | null = useMemo(
+    () => (flagHit ? null : nextQuestion(answers, { gender: profile?.gender ?? null })),
+    [answers, flagHit, profile?.gender],
+  );
+
+  // Keep the multi/text editors in sync with the current question + saved answer.
+  useEffect(() => {
+    const cur = answers[q?.id ?? ""];
+    setMulti(Array.isArray(cur) ? [...cur] : []);
+    setText(typeof cur === "string" && cur !== "__skip__" ? cur : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q?.id]);
+
+  function persistLocal(next: IQAnswers) {
+    setAnswers(next);
+    // updateDraft persists to localStorage synchronously inside ScanShell.
+    updateDraft({ answers: answersToDraft(next) });
   }
 
-  /** Merge server-raised flags into the draft. */
-  function mergeServerFlags(raised: Array<{ flag_type: RedFlagType }>) {
-    if (!raised.length) return;
-    updateDraft((() => {
-      const merged: RedFlagType[] = [...draft.redFlags];
-      for (const f of raised) if (!merged.includes(f.flag_type)) merged.push(f.flag_type);
-      return { redFlags: merged };
-    })());
-  }
-
-  function placePin(clientX: number) {
-    if (!selType) {
-      toast(t("kahani.pickPin"));
+  async function syncPin(qid: string, next: IQAnswers) {
+    if (!PIN_QUESTIONS.has(qid) || createdPins.current.has(qid)) return;
+    const pin = pinForQuestion(qid, next);
+    if (!pin || serverPinTypes.has(pin.event_type)) {
+      if (pin) createdPins.current.add(qid);
       return;
     }
-    const tl = tlRef.current;
-    if (!tl) return;
-    const r = tl.getBoundingClientRect();
-    let pos = Math.round(((clientX - r.left - 16) / (r.width - 32)) * 100);
-    pos = Math.max(0, Math.min(100, pos));
-    const pin: DraftPin = { id: `pin-${Date.now()}`, type: selType, pos, answers: {} };
-    const pins = [...draft.pins, pin];
-    updateDraft({ pins, ...evalPaths(pins) });
-    setSelType(null);
-    setOpenPinId(pin.id);
-    toast(t("kahani.pinAdded"));
-    // Best-effort server sync; the local draft is the source of truth offline.
-    scansApi
-      .addTimelineEvent(scanId, { event_type: pin.type, occurred_on: dateFromPos(pos), followup_answers: {} })
-      .then((res) => mergeServerFlags(res.red_flags_raised))
-      .catch(() => {});
-  }
-
-  function answerPin(qid: string, value: string) {
-    if (!openPin) return;
-    const pins = draft.pins.map((p) =>
-      p.id === openPin.id ? { ...p, answers: { ...p.answers, [qid]: value } } : p,
-    );
-    updateDraft({ pins, ...evalPaths(pins) });
-    const fu = (PIN_FU[openPin.type] ?? []).find((f) => f.qid === qid);
-    if (fu?.type === "slider") setSliderVal("7");
-    if (fu?.type === "text") setTextVal("");
-    // Sync answers to the server (best effort).
-    const updated = pins.find((p) => p.id === openPin.id);
-    if (updated) {
-      scansApi
-        .addTimelineEvent(scanId, {
-          event_type: updated.type,
-          occurred_on: dateFromPos(updated.pos),
-          followup_answers: updated.answers,
-        })
-        .then((res) => mergeServerFlags(res.red_flags_raised))
-        .catch(() => {});
+    try {
+      const res = await scansApi.addTimelineEvent(id, {
+        event_type: pin.event_type, occurred_on: pin.occurred_on, followup_answers: pin.followup_answers,
+      });
+      createdPins.current.add(qid);
+      setServerPinTypes((s) => new Set(s).add(pin.event_type));
+      const merged = mergeRaised(flags, res.red_flags_raised);
+      if (merged.length !== flags.length) setFlags(merged);
+      const onsetMonths = qid === "onset" ? ONSET_MONTHS[String(next["onset"])] ?? 3 : 3;
+      updateDraft({
+        pins: [...draft.pins, {
+          id: `iv-${Date.now()}`, type: pin.event_type,
+          pos: Math.max(0, Math.min(100, 100 - onsetMonths * 4)),
+          answers: Object.fromEntries(Object.entries(pin.followup_answers).map(([k, v]) => [k, String(v)])),
+        }],
+      });
+    } catch (e: any) {
+      // 409: a red flag fired on the server — record it and stop the interview.
+      const raised = e?.details?.red_flags_raised;
+      if (raised) {
+        const merged = mergeRaised(flags, raised);
+        setFlags(merged);
+        setFlagHit(true);
+      }
     }
   }
 
-  function deletePin() {
-    if (!openPinId) return;
-    const pins = draft.pins.filter((p) => p.id !== openPinId);
-    updateDraft({ pins, ...evalPaths(pins) });
-    setOpenPinId(null);
+  /** Push the interview's answers to the server answers blob (best-effort). */
+  async function pushAnswers(next: IQAnswers): Promise<boolean> {
+    try {
+      const res = await scansApi.saveAnswers(id, interviewToAnswers(next));
+      const raised = (res as any)?.red_flags_raised;
+      if (raised?.length) {
+        setFlags((f) => mergeRaised(f, raised));
+        setFlagHit(true);
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      const raised = e?.details?.red_flags_raised;
+      if (raised?.length) {
+        setFlags((f) => mergeRaised(f, raised));
+        setFlagHit(true);
+        return false;
+      }
+      return true; // local answers are still safe; server sync can retry later
+    }
   }
 
-  function continueToLens() {
-    const pins = draft.pins;
-    let path = draft.path;
-    if (path === "standard" && pins.length === 1 && pins[0].type === "shedding_onset") path = "sparse";
-    updateDraft({ path });
-    goStage("lens");
+  async function raiseInterviewFlag(bothersVals: string[], onsetVal: string) {
+    try {
+      if (bothersVals.includes("pain")) {
+        const res = await scansApi.saveAnswers(id, { scalp_pain: true });
+        setFlags((f) => mergeRaised(f, (res as any)?.red_flags_raised ?? []));
+      } else if (bothersVals.includes("patches")) {
+        const res = await scansApi.addTimelineEvent(id, {
+          event_type: "shedding_onset",
+          occurred_on: monthsAgoISO(ONSET_MONTHS[onsetVal] ?? 3),
+          followup_answers: { sudden_or_gradual: "sudden", patchy: true },
+        });
+        setFlags((f) => mergeRaised(f, res.red_flags_raised ?? []));
+      }
+    } catch (e: any) {
+      const raised = e?.details?.red_flags_raised;
+      if (raised?.length) setFlags((f) => mergeRaised(f, raised));
+    }
+    setFlagHit(true);
+  }
+
+  function recordAnswer(qid: string, value: string | string[]) {
+    const next = { ...answers, [qid]: value };
+    persistLocal(next);
+    setHistory((h) => [...h, qid]);
+    // Red-flag answers stop the interview for dermatologist review.
+    if (qid === "bothers" && interviewRedFlag(next)) {
+      const vals = Array.isArray(value) ? value : [];
+      void raiseInterviewFlag(vals, String(next["onset"] ?? ""));
+      return;
+    }
+    void syncPin(qid, next);
   }
 
   function skip() {
-    updateDraft({ path: draft.path === "standard" ? "sparse" : draft.path });
-    goStage("jara");
+    if (!q) return;
+    recordAnswer(q.id, q.kind === "multi" ? [] : "__skip__");
   }
 
-  const canContinue = draft.pins.length > 0;
+  function goBack() {
+    setHistory((h) => {
+      const prev = h[h.length - 1];
+      if (!prev) return h;
+      setAnswers((a) => {
+        const next = { ...a };
+        delete next[prev];
+        updateDraft({ answers: answersToDraft(next) });
+        return next;
+      });
+      return h.slice(0, -1);
+    });
+  }
+
+  async function finish() {
+    const pins = interviewToPins(answers);
+    if (!pins.length && serverPinTypes.size === 0) {
+      setFinishWarn(true);
+      return;
+    }
+    setDoneMsg(script === "rn" ? "Badhai chha — katha pura bhayo." : "Done — your story is complete.");
+    const ok = await pushAnswers(answers);
+    const path = derivePath(answers, profile?.age_band);
+    updateDraft({ path });
+    // A 409 inside pushAnswers already flips to the red-flag screen; only
+    // advance when the answers landed without raising a flag.
+    if (ok) goStage("lens");
+  }
+
+  const bits = useMemo(() => storyBits(answers), [answers]);
+  const answeredCount = Object.keys(answers).length;
+
+  if (flagHit) {
+    const f = flags[0];
+    return (
+      <div className="iv-wrap">
+        <div className="card iv-flag">
+          <div className="iv-flag-ico">⚠️</div>
+          <h2>{script === "rn" ? "Yo kura dermatologist le hernu parchha" : "A dermatologist should look at this"}</h2>
+          <p>
+            {script === "rn"
+              ? "Tapaile bhannubhaeko lakshan (dukhnu/khatira wa tukra-tukra kapal jharnu) samanya hoina — yasalai doctor le nai hernu parchha. Tapaiko scan surakshit chha; hamile yo jankari dermatologist lai pathaidinchhau."
+              : "What you described (pain/sores, or shedding in patches) isn't routine — a doctor needs to see it. Your scan is saved, and we'll pass this to a dermatologist."}
+          </p>
+          {f && <p className="mut">{f.flag_type}: {f.detail}</p>}
+          <button className="btn btn-p btn-block" onClick={() => goStage("lens")}>
+            {script === "rn" ? "Photo tira janus" : "Continue to photos"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const monthOptions = useMemo(() => {
+    const out: { value: string; label: string }[] = [];
+    const d = new Date();
+    for (let i = 0; i < 12; i++) {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      out.push({ value: iso, label: monthName(iso, script) });
+      d.setMonth(d.getMonth() - 1);
+    }
+    return out;
+  }, [script]);
 
   return (
-    <div>
-      <h1>{t("kahani.title")}</h1>
-      <p className="muted">{t("kahani.subtitle")}</p>
-
-      {draft.path === "postpartum" && (
-        <NoticeBox tone="ok" title={t("kahani.postpartumTitle")}><p>{t("kahani.postpartumBody")}</p></NoticeBox>
-      )}
-      {draft.medFlag && (
-        <NoticeBox tone="notice" title={t("kahani.medFlagTitle")}><p>{t("kahani.medFlagBody")}</p></NoticeBox>
-      )}
-      {draft.path === "stress" && (
-        <NoticeBox tone="notice" title={t("kahani.stressTitle")}><p>{t("kahani.stressBody")}</p></NoticeBox>
-      )}
-      {draft.path === "sparse" && (
-        <div className="card"><p><b>{t("kahani.sparseTitle")}</b> — {t("kahani.sparseBody")}</p></div>
-      )}
-      {draft.path === "young" && (
-        <div className="card"><p><b>{t("kahani.youngTitle")}</b> — {t("kahani.youngBody")}</p></div>
-      )}
-      {draft.redFlags.length > 0 && (
-        <NoticeBox tone="flag" title={t("kahani.redFlagTitle")}>
-          <p>
-            {draft.redFlags.map((f) => (
-              <span key={f}><Chip tone="red">{t(`redflags.${f}`)}</Chip><br /></span>
-            ))}
-          </p>
-          <p className="muted">{t("kahani.redFlagBody")}</p>
-        </NoticeBox>
-      )}
-
-      <div className="palette" role="group" aria-label={t("kahani.pickPin")}>
-        {PIN_TYPES.map((pt) => (
-          <button key={pt} className={selType === pt ? "sel" : ""} onClick={() => setSelType(pt)} aria-pressed={selType === pt}>
-            <span style={{ color: PIN_COLORS[pt] }}><Icon.pin size={22} /></span>
-            {t(`kahani.pins.${pt}`)}
-          </button>
-        ))}
-      </div>
-      <p className="muted tiny">
-        {selType ? t("kahani.tapTimeline", { pin: t(`kahani.pins.${selType}`) }) : t("kahani.pickPin")}
-      </p>
-
-      <div
-        className="timeline"
-        ref={tlRef}
-        role="button"
-        tabIndex={0}
-        aria-label={t("kahani.title")}
-        onClick={(e) => placePin(e.clientX)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && tlRef.current) {
-            const r = tlRef.current.getBoundingClientRect();
-            placePin(r.left + r.width / 2);
-          }
-        }}
-      >
-        <div className="tl-track" />
-        {draft.pins.map((p) => (
-          <button
-            key={p.id}
-            className="pin"
-            style={{ left: `calc(16px + (100% - 32px) * ${p.pos / 100})`, background: PIN_COLORS[p.type] }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenPinId(p.id);
-            }}
-            aria-label={`${t(`kahani.pins.${p.type}`)} — ${monthsAgoLabel(t, p.pos)}`}
-          >
-            <Icon.pin size={20} />
-          </button>
-        ))}
-        <div className="tl-ends">
-          <span>← {t("kahani.twoYearsAgo")}</span>
-          <span>{t("kahani.today")} →</span>
+    <div className="iv-wrap">
+      {/* live story-so-far strip */}
+      <div className="iv-strip" aria-live="polite">
+        <div className="iv-strip-title">
+          {script === "rn" ? "Tapaiko katha ahilesamma" : "Your story so far"}
         </div>
+        {bits.length === 0 ? (
+          <div className="iv-strip-empty">
+            {script === "rn" ? "Jawaf dindai janus — yaha tapai ko katha banchha." : "Answer as you go — your story builds here."}
+          </div>
+        ) : (
+          <div className="iv-bits">
+            {bits.map((b) => (
+              <span key={b.key} className="chip">{b.text[script]}</span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {openPin && (
-        <div className="card">
-          <h3>
-            <span style={{ color: PIN_COLORS[openPin.type], verticalAlign: "-4px", marginRight: 6 }}>
-              <Icon.pin size={18} />
+      {!q ? (
+        /* interview complete */
+        <div className="card iv-done">
+          <div className="iv-done-ico">🌱</div>
+          <h2>{script === "rn" ? "Katha pura bhayo!" : "Your story is complete!"}</h2>
+          <p>{script === "rn"
+            ? "Abha hamro palo — tapai ko kapal ko photo herne."
+            : "Now it's our turn — let's look at your hair."}</p>
+          {finishWarn && (
+            <p className="err">
+              {script === "rn"
+                ? "Kamti ma euta jawaf dinus — pahilo prashna bata suru garnus."
+                : "Please answer at least one question — start with the first one."}
+            </p>
+          )}
+          {doneMsg && <p className="ok">{doneMsg}</p>}
+          <div className="rowflex">
+            <button className="btn btn-o" onClick={goBack} disabled={history.length === 0}>
+              {script === "rn" ? "Farka" : "Back"}
+            </button>
+            <button className="btn btn-p" onClick={finish} style={{ flex: 1 }}>
+              {script === "rn" ? "Photo tira" : "Continue to photos"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="card iv-qcard" key={q.id}>
+          <div className="iv-qmeta">
+            <span className="chip grey">
+              {script === "rn" ? `Prashna ${answeredCount + 1}` : `Question ${answeredCount + 1}`}
             </span>
-            {t(`kahani.pins.${openPin.type}`)} <Chip>{monthsAgoLabel(t, openPin.pos)}</Chip>
-          </h3>
-          {nextFu ? (
+            {history.length > 0 && (
+              <button className="iv-backlink" onClick={goBack}>
+                {script === "rn" ? "← Farka" : "← Back"}
+              </button>
+            )}
+          </div>
+          <h2 className="iv-qtext">{q.text[script]}</h2>
+          {q.sub && <p className="mut iv-qsub">{q.sub[script]}</p>}
+
+          {q.kind === "single" && q.options && (
+            <div className="iv-opts">
+              {q.options.map((o) => (
+                <button key={o.value} className="iv-chip" onClick={() => recordAnswer(q.id, o.value)}>
+                  {o.label[script]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {q.kind === "multi" && q.options && (
             <>
-              <div className="bubble q"><Icon.chat size={16} /> {t(nextFu.textKey)}</div>
-              {nextFu.type === "opts" && (
-                <div className="opts">
-                  {nextFu.opts!.map((o) => (
-                    <button key={o.value} onClick={() => answerPin(nextFu.qid, o.value)}>
-                      {t(o.labelKey)}
+              <div className="iv-opts">
+                {q.options.map((o) => {
+                  const on = multi.includes(o.value);
+                  return (
+                    <button
+                      key={o.value}
+                      className={"iv-chip" + (on ? " on" : "")}
+                      aria-pressed={on}
+                      onClick={() => setMulti((m) => (m.includes(o.value) ? m.filter((x) => x !== o.value) : [...m, o.value]))}
+                    >
+                      {on ? "✓ " : ""}{o.label[script]}
                     </button>
-                  ))}
-                </div>
-              )}
-              {nextFu.type === "slider" && (
-                <div>
-                  <input
-                    type="range" min={nextFu.min} max={nextFu.max} value={sliderVal}
-                    onChange={(e) => setSliderVal(e.target.value)}
-                    aria-label={t(nextFu.textKey)}
-                  />
-                  <div className="rowflex">
-                    <b>{sliderVal}h</b>
-                    <span className="spacer" />
-                    <button className="btn btn-p" style={{ width: "auto", margin: 0 }} onClick={() => answerPin(nextFu.qid, sliderVal)}>
-                      {t("common.ok")}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {nextFu.type === "text" && (
-                <div>
-                  <input
-                    type="text" value={textVal}
-                    placeholder={nextFu.placeholderKey ? t(nextFu.placeholderKey) : ""}
-                    onChange={(e) => setTextVal(e.target.value)}
-                    aria-label={t(nextFu.textKey)}
-                  />
-                  <button className="btn btn-p" onClick={() => answerPin(nextFu.qid, textVal)}>
-                    {t("common.save")}
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="muted">{t("kahani.allDone")}</p>
-              <button className="btn btn-s" onClick={() => setOpenPinId(null)}>{t("kahani.addAnother")}</button>
+                  );
+                })}
+              </div>
+              <button className="btn btn-p btn-block" onClick={() => recordAnswer(q.id, multi)} disabled={multi.length === 0}>
+                {script === "rn" ? "Agadi" : "Continue"}
+              </button>
             </>
           )}
-          <button className="linklike" style={{ color: "var(--bad)" }} onClick={deletePin}>
-            {t("kahani.deletePin")}
+
+          {q.kind === "month" && (
+            <div className="iv-months">
+              {monthOptions.map((m) => (
+                <button key={m.value} className="iv-chip sm" onClick={() => recordAnswer(q.id, m.value)}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {q.kind === "text" && (
+            <>
+              <textarea
+                className="input iv-textarea"
+                rows={3}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={q.text[script]}
+              />
+              <button className="btn btn-p btn-block" onClick={() => recordAnswer(q.id, text.trim() ? text.trim() : "__skip__")}>
+                {script === "rn" ? "Save gara" : "Save"}
+              </button>
+            </>
+          )}
+
+          <button className="iv-skip" onClick={skip}>
+            {script === "rn" ? "Skip garnus →" : "Skip →"}
           </button>
         </div>
       )}
 
-      <button className="btn btn-p" disabled={!canContinue} onClick={continueToLens}>
-        {t("kahani.continueN", { n: draft.pins.length })}
+      <button className="iv-skipall" onClick={() => { updateDraft({ path: "sparse" }); goStage("jara"); }}>
+        {script === "rn" ? "Interview nai skip garne" : "Skip the interview entirely"}
       </button>
-      {!canContinue && <p className="muted tiny">{t("kahani.needOnePin")}</p>}
-      <button className="linklike" onClick={skip}>{t("kahani.skip")}</button>
     </div>
   );
 }

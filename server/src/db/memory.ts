@@ -38,6 +38,13 @@ import type {
   StaffVerificationStatus, SupportTicket, TicketReply, TicketStatus, EducationArticle,
   TriagePreset,
   User, Role, Profile, Consent, OtpRow, Scan, TimelineEvent, Photo, PhotoAngle,
+  // P-5..P-17 (v1.4 backend)
+  ReturnRequest, RefundStatus, LabProvider, LabTest, LabBookingStatus, LabBooking,
+  LabReport, FamilyMember, IdempotencyRecord, AiConversation, AiMessage,
+  ArticleView, QaQuestion, QaQuestionStatus, QaAnswer, QaFlag,
+  ReferralCode, Referral, CoinLedgerEntry, Wallet, WalletTxnKind, WalletTxn,
+  ShipmentEventType, ShipmentEvent, Food, DietPlan, DietAssignment, HabitLog,
+  Milestone, UserMilestone, CoachThread, CoachMessage,
 } from "./types";
 
 const now = () => new Date().toISOString();
@@ -70,6 +77,15 @@ function streakFromDays(days: Set<string>): number {
 // server Case type, so it is carried via a narrow local cast — never stored
 // anywhere else.
 type CaseWithSla = Case & { sla_paused_at?: string | null };
+
+/** P-5 (v1.4): the refunds table gains `status` (+ decided_by / decided_at),
+ * but the shared Refund type predates it. Carried via a narrow local cast —
+ * never stored anywhere else. */
+type RefundRow = Refund & { status?: RefundStatus | null; decided_by?: string | null; decided_at?: string | null };
+
+/** P-10 (v1.4): education_articles gains `category`; the shared
+ * EducationArticle type predates it — same narrow-cast pattern. */
+type ArticleRow = EducationArticle & { category?: string | null };
 
 /** Monday (local) of the current week, as YYYY-MM-DD. */
 function b4WeekStart(): string {
@@ -148,6 +164,37 @@ export class MemoryStore implements Store {
   loyaltyEntries = new Map<string, LoyaltyEntry>();
   reviewRequests = new Map<string, ReviewRequest>();
   routines = new Map<string, RoutineItem>();
+  // ---- P-5..P-17 (v1.4 backend) fields ----
+  returnRequests = new Map<string, ReturnRequest>();
+  labProviders = new Map<string, LabProvider>();
+  labTests = new Map<string, LabTest>();
+  labBookings = new Map<string, LabBooking>();
+  labReports = new Map<string, LabReport>();
+  familyMembers = new Map<string, FamilyMember>();
+  idempotencyRecords = new Map<string, IdempotencyRecord>();
+  aiConversations = new Map<string, AiConversation>();
+  aiMessages = new Map<string, AiMessage>();
+  articleViews = new Map<string, ArticleView>(); // key: `${article_id}:${user_id}`
+  qaQuestions = new Map<string, QaQuestion>();
+  qaAnswers = new Map<string, QaAnswer>();
+  qaAnswerAgrees = new Map<string, { answer_id: string; doctor_id: string; created_at: string }>(); // key: `${answer_id}:${doctor_id}`
+  qaHelpfulness = new Map<string, { answer_id: string; user_id: string; helpful: boolean; created_at: string }>(); // key: `${answer_id}:${user_id}`
+  qaFlags = new Map<string, QaFlag>();
+  referralCodes = new Map<string, ReferralCode>();
+  referralCodesByUser = new Map<string, ReferralCode>(); // user_id -> code
+  referrals = new Map<string, Referral>();
+  coinLedger: CoinLedgerEntry[] = [];
+  wallets = new Map<string, Wallet>(); // user_id -> wallet
+  walletTxns = new Map<string, WalletTxn>();
+  shipmentEvents = new Map<string, ShipmentEvent>();
+  foods = new Map<string, Food>();
+  dietPlans = new Map<string, DietPlan>();
+  dietAssignments = new Map<string, DietAssignment>();
+  habitLogs = new Map<string, HabitLog>(); // key: `${user_id}:${log_date}:${habit_key}`
+  milestones = new Map<string, Milestone>();
+  userMilestones = new Map<string, UserMilestone>(); // key: `${milestone_id}:${user_id}`
+  coachThreads = new Map<string, CoachThread>();
+  coachMessages = new Map<string, CoachMessage>();
   // ---- Batch 3 (009) fields ----
 
   constructor() {
@@ -3005,4 +3052,454 @@ async markArticleAssignmentRead(id: string): Promise<ArticleAssignment | null> {
   }
 
 // __B4_CUSTOMER_METHODS__
+
+  /* ================= P-5..P-17 (v1.4 backend) ================= */
+  // ---- P-5: returns + customer-visible refunds ----
+  async createReturnRequest(r: { order_id: string; user_id: string; reason: string }): Promise<ReturnRequest> {
+    const row: ReturnRequest = { id: randomUUID(), order_id: r.order_id, user_id: r.user_id, reason: r.reason, status: "requested", created_at: now(), decided_at: null, decided_by: null };
+    this.returnRequests.set(row.id, row);
+    return row;
+  }
+  async listReturnRequestsByUser(userId: string): Promise<ReturnRequest[]> {
+    return [...this.returnRequests.values()]
+      .filter((r) => r.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async listReturnRequests(status?: string): Promise<ReturnRequest[]> {
+    return [...this.returnRequests.values()]
+      .filter((r) => !status || r.status === status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async updateReturnRequest(id: string, patch: { status: ReturnRequest["status"]; decided_by?: string | null }): Promise<ReturnRequest | null> {
+    const r = this.returnRequests.get(id); if (!r) return null;
+    r.status = patch.status; r.decided_by = patch.decided_by ?? null; r.decided_at = now();
+    return r;
+  }
+  async listRefundsByUser(userId: string): Promise<Refund[]> {
+    return [...this.refunds.values()]
+      .filter((r) => this.orders.get(r.order_id)?.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async updateRefundStatus(id: string, status: RefundStatus, decidedBy: string): Promise<Refund | null> {
+    const r = this.refunds.get(id) as RefundRow | undefined;
+    if (!r) return null;
+    r.status = status; r.decided_by = decidedBy; r.decided_at = now();
+    return r;
+  }
+
+  // ---- P-6: labs ----
+  async createLabProvider(p: { name_en: string; name_ne?: string | null; note?: string | null }): Promise<LabProvider> {
+    const row: LabProvider = { id: randomUUID(), name_en: p.name_en, name_ne: p.name_ne ?? null, is_active: true, note: p.note ?? null, created_at: now() };
+    this.labProviders.set(row.id, row);
+    return row;
+  }
+  async listLabProviders(): Promise<LabProvider[]> {
+    return [...this.labProviders.values()].sort((a, b) => a.name_en.localeCompare(b.name_en));
+  }
+  async createLabTest(t: { provider_id?: string | null; name_en: string; name_ne?: string | null; description_en?: string | null; description_ne?: string | null; price_npr: number }): Promise<LabTest> {
+    const row: LabTest = {
+      id: randomUUID(), provider_id: t.provider_id ?? null, name_en: t.name_en,
+      name_ne: t.name_ne ?? null, description_en: t.description_en ?? null,
+      description_ne: t.description_ne ?? null, price_npr: t.price_npr,
+      is_active: true, created_at: now(),
+    };
+    this.labTests.set(row.id, row);
+    return row;
+  }
+  async listLabTests(activeOnly: boolean): Promise<LabTest[]> {
+    return [...this.labTests.values()]
+      .filter((t) => !activeOnly || t.is_active)
+      .sort((a, b) => a.name_en.localeCompare(b.name_en));
+  }
+  async getLabTest(id: string): Promise<LabTest | null> { return this.labTests.get(id) ?? null; }
+  async updateLabTest(id: string, patch: Partial<Pick<LabTest, "name_en" | "name_ne" | "description_en" | "description_ne" | "price_npr" | "is_active">>): Promise<LabTest | null> {
+    const t = this.labTests.get(id); if (!t) return null;
+    Object.assign(t, patch);
+    return t;
+  }
+  async createLabBooking(b: { user_id: string; test_id: string; scheduled_on?: string | null; slot?: string | null; address: Record<string, unknown>; phone: string }): Promise<LabBooking> {
+    const row: LabBooking = {
+      id: randomUUID(), user_id: b.user_id, test_id: b.test_id,
+      scheduled_on: b.scheduled_on ?? null, slot: b.slot ?? null,
+      address: b.address, phone: b.phone, status: "booked",
+      created_at: now(), updated_at: now(),
+    };
+    this.labBookings.set(row.id, row);
+    return row;
+  }
+  async listLabBookingsByUser(userId: string): Promise<LabBooking[]> {
+    return [...this.labBookings.values()]
+      .filter((b) => b.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async listLabBookings(status?: string): Promise<LabBooking[]> {
+    return [...this.labBookings.values()]
+      .filter((b) => !status || b.status === status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async getLabBooking(id: string): Promise<LabBooking | null> { return this.labBookings.get(id) ?? null; }
+  async updateLabBookingStatus(id: string, status: LabBookingStatus): Promise<LabBooking | null> {
+    const b = this.labBookings.get(id); if (!b) return null;
+    b.status = status; b.updated_at = now();
+    return b;
+  }
+  async attachLabReport(bookingId: string, storagePath: string, uploadedBy: string | null): Promise<LabReport> {
+    const row: LabReport = { id: randomUUID(), booking_id: bookingId, storage_path: storagePath, uploaded_by: uploadedBy, created_at: now() };
+    this.labReports.set(row.id, row);
+    const b = this.labBookings.get(bookingId);
+    if (b) { b.status = "report_ready"; b.updated_at = now(); }
+    return row;
+  }
+  async getLabReport(bookingId: string): Promise<LabReport | null> {
+    for (const r of this.labReports.values()) if (r.booking_id === bookingId) return r;
+    return null;
+  }
+
+  // ---- P-7: family profiles ----
+  async createFamilyMember(m: { owner_id: string; name: string; relation?: string | null }): Promise<FamilyMember> {
+    const row: FamilyMember = {
+      id: randomUUID(), owner_id: m.owner_id, member_user_id: null,
+      name: m.name, relation: m.relation ?? null,
+      status: "invited", invite_token: randomUUID().replace(/-/g, ""),
+      data_shared: false, created_at: now(),
+    };
+    this.familyMembers.set(row.id, row);
+    return row;
+  }
+  async listFamilyMembers(ownerId: string): Promise<FamilyMember[]> {
+    return [...this.familyMembers.values()]
+      .filter((m) => m.owner_id === ownerId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async getFamilyMember(id: string): Promise<FamilyMember | null> { return this.familyMembers.get(id) ?? null; }
+  async getFamilyMemberByToken(token: string): Promise<FamilyMember | null> {
+    for (const m of this.familyMembers.values()) if (m.invite_token === token) return m;
+    return null;
+  }
+  async acceptFamilyInvite(token: string, memberUserId: string): Promise<FamilyMember | null> {
+    for (const m of this.familyMembers.values()) {
+      if (m.invite_token === token) {
+        if (m.status !== "invited") return null;
+        m.member_user_id = memberUserId; m.status = "active"; m.invite_token = null;
+        return m;
+      }
+    }
+    return null;
+  }
+  async setFamilyMemberShare(id: string, shared: boolean): Promise<FamilyMember | null> {
+    const m = this.familyMembers.get(id); if (!m) return null;
+    m.data_shared = shared;
+    return m;
+  }
+  async removeFamilyMember(id: string): Promise<boolean> { return this.familyMembers.delete(id); }
+
+  // ---- P-8: idempotency + sync ----
+  async getIdempotencyRecord(key: string, userId: string, scope: string): Promise<IdempotencyRecord | null> {
+    const r = this.idempotencyRecords.get(key);
+    if (!r || r.user_id !== userId || r.scope !== scope) return null;
+    return r;
+  }
+  async saveIdempotencyRecord(r: { key: string; user_id: string; scope: string; response: unknown }): Promise<void> {
+    this.idempotencyRecords.set(r.key, { key: r.key, user_id: r.user_id, scope: r.scope, response: r.response, created_at: now() });
+  }
+
+  // ---- P-9: AI assistant (education-only) ----
+  async createAiConversation(userId: string): Promise<AiConversation> {
+    const row: AiConversation = { id: randomUUID(), user_id: userId, created_at: now() };
+    this.aiConversations.set(row.id, row);
+    return row;
+  }
+  async listAiConversations(userId: string): Promise<AiConversation[]> {
+    return [...this.aiConversations.values()]
+      .filter((c) => c.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async addAiMessage(conversationId: string, role: "user" | "assistant", body: string, redFlagged?: boolean): Promise<AiMessage> {
+    const row: AiMessage = { id: randomUUID(), conversation_id: conversationId, role, body, red_flagged: redFlagged ?? false, created_at: now() };
+    this.aiMessages.set(row.id, row);
+    return row;
+  }
+  async listAiMessages(conversationId: string): Promise<AiMessage[]> {
+    return [...this.aiMessages.values()]
+      .filter((m) => m.conversation_id === conversationId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  // ---- P-10/P-11: content ----
+  async listPublishedArticles(category?: string): Promise<EducationArticle[]> {
+    return [...this.articles.values()]
+      .filter((a) => a.is_published && (!category || (a as ArticleRow).category === category))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async recordArticleView(articleId: string, userId: string): Promise<void> {
+    const key = `${articleId}:${userId}`;
+    if (this.articleViews.has(key)) return; // unique (article_id, user_id) — silently ignore duplicates
+    this.articleViews.set(key, { id: randomUUID(), article_id: articleId, user_id: userId, created_at: now() });
+  }
+  async getArticleViewCount(articleId: string): Promise<number> {
+    let n = 0;
+    for (const v of this.articleViews.values()) if (v.article_id === articleId) n++;
+    return n;
+  }
+
+  // ---- P-12: community Q&A ----
+  async createQaQuestion(userId: string, title: string, body: string): Promise<QaQuestion> {
+    const row: QaQuestion = { id: randomUUID(), user_id: userId, title, body, status: "open", created_at: now(), updated_at: now() };
+    this.qaQuestions.set(row.id, row);
+    return row;
+  }
+  async listQaQuestions(opts: { status?: string; limit: number; offset: number }): Promise<{ questions: QaQuestion[]; total: number }> {
+    const all = [...this.qaQuestions.values()]
+      .filter((q) => !opts.status || q.status === opts.status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { questions: all.slice(opts.offset, opts.offset + opts.limit), total: all.length };
+  }
+  async getQaQuestion(id: string): Promise<QaQuestion | null> { return this.qaQuestions.get(id) ?? null; }
+  async updateQaQuestionStatus(id: string, status: QaQuestionStatus): Promise<QaQuestion | null> {
+    const q = this.qaQuestions.get(id); if (!q) return null;
+    q.status = status; q.updated_at = now();
+    return q;
+  }
+  async createQaAnswer(questionId: string, doctorId: string, body: string): Promise<QaAnswer> {
+    const row: QaAnswer = { id: randomUUID(), question_id: questionId, doctor_id: doctorId, body, agree_count: 0, helpful_count: 0, created_at: now(), updated_at: now() };
+    this.qaAnswers.set(row.id, row);
+    return row;
+  }
+  /** Computed counts: agree_count = qa_answer_agrees rows for the answer;
+   * helpful_count = qa_helpfulness rows with helpful=true. Returned as fresh
+   * objects — the stored rows keep their creation-time zeros. */
+  async listQaAnswers(questionId: string): Promise<QaAnswer[]> {
+    const agrees = new Map<string, number>();
+    for (const a of this.qaAnswerAgrees.values()) {
+      agrees.set(a.answer_id, (agrees.get(a.answer_id) ?? 0) + 1);
+    }
+    const helpful = new Map<string, number>();
+    for (const h of this.qaHelpfulness.values()) {
+      if (h.helpful) helpful.set(h.answer_id, (helpful.get(h.answer_id) ?? 0) + 1);
+    }
+    return [...this.qaAnswers.values()]
+      .filter((a) => a.question_id === questionId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((a) => ({ ...a, agree_count: agrees.get(a.id) ?? 0, helpful_count: helpful.get(a.id) ?? 0 }));
+  }
+  async agreeQaAnswer(answerId: string, doctorId: string): Promise<boolean> {
+    const key = `${answerId}:${doctorId}`;
+    if (this.qaAnswerAgrees.has(key)) return false;
+    this.qaAnswerAgrees.set(key, { answer_id: answerId, doctor_id: doctorId, created_at: now() });
+    return true;
+  }
+  async setQaHelpful(answerId: string, userId: string, helpful: boolean): Promise<void> {
+    const key = `${answerId}:${userId}`;
+    const prev = this.qaHelpfulness.get(key);
+    this.qaHelpfulness.set(key, { answer_id: answerId, user_id: userId, helpful, created_at: prev?.created_at ?? now() });
+  }
+  async flagQaContent(f: { question_id?: string | null; answer_id?: string | null; user_id: string; reason: string }): Promise<QaFlag> {
+    const row: QaFlag = { id: randomUUID(), question_id: f.question_id ?? null, answer_id: f.answer_id ?? null, user_id: f.user_id, reason: f.reason, created_at: now() };
+    this.qaFlags.set(row.id, row);
+    return row;
+  }
+  async listQaFlags(): Promise<QaFlag[]> {
+    return [...this.qaFlags.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  // ---- P-13: referrals + coins ----
+  async getOrCreateReferralCode(userId: string): Promise<ReferralCode> {
+    const existing = this.referralCodesByUser.get(userId);
+    if (existing) return existing;
+    const code = "JARAA-" + randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+    const row: ReferralCode = { id: randomUUID(), user_id: userId, code, created_at: now() };
+    this.referralCodes.set(row.id, row);
+    this.referralCodesByUser.set(userId, row);
+    return row;
+  }
+  async getReferralCode(code: string): Promise<ReferralCode | null> {
+    for (const c of this.referralCodes.values()) if (c.code === code) return c;
+    return null;
+  }
+  async applyReferralCode(referredId: string, code: string): Promise<Referral> {
+    for (const r of this.referrals.values()) {
+      if (r.referred_id === referredId) return r; // one referral per referred user
+    }
+    const rc = await this.getReferralCode(code);
+    if (!rc) throw new Error(`referral code not found: ${code}`);
+    if (rc.user_id === referredId) throw new Error("cannot apply your own referral code");
+    const row: Referral = { id: randomUUID(), referrer_id: rc.user_id, referred_id: referredId, code, status: "pending", completed_at: null, created_at: now() };
+    this.referrals.set(row.id, row);
+    return row;
+  }
+  async completeReferralForUser(referredId: string): Promise<Referral | null> {
+    for (const r of this.referrals.values()) {
+      if (r.referred_id === referredId && r.status === "pending") {
+        r.status = "completed"; r.completed_at = now();
+        return r;
+      }
+    }
+    return null;
+  }
+  async grantCoins(userId: string, amount: number, reason: string, refType?: string | null, refId?: string | null): Promise<CoinLedgerEntry> {
+    const row: CoinLedgerEntry = { id: randomUUID(), user_id: userId, amount, reason, ref_type: refType ?? null, ref_id: refId ?? null, created_at: now() };
+    this.coinLedger.push(row);
+    return row;
+  }
+  async getCoinBalance(userId: string): Promise<number> {
+    return this.coinLedger.filter((e) => e.user_id === userId).reduce((s, e) => s + e.amount, 0);
+  }
+  async listCoinLedger(userId: string, limit: number): Promise<CoinLedgerEntry[]> {
+    return this.coinLedger
+      .filter((e) => e.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit);
+  }
+
+  // ---- P-14: wallet ----
+  async getOrCreateWallet(userId: string): Promise<Wallet> {
+    const w = this.wallets.get(userId);
+    if (w) return w;
+    const row: Wallet = { id: randomUUID(), user_id: userId, balance_npr: 0, updated_at: now() };
+    this.wallets.set(userId, row);
+    return row;
+  }
+  async addWalletTxn(userId: string, amountNpr: number, kind: WalletTxnKind, ref?: string | null): Promise<WalletTxn> {
+    const w = await this.getOrCreateWallet(userId);
+    w.balance_npr += amountNpr; w.updated_at = now();
+    const txn: WalletTxn = { id: randomUUID(), wallet_id: w.id, amount_npr: amountNpr, kind, ref: ref ?? null, created_at: now() };
+    this.walletTxns.set(txn.id, txn);
+    return txn;
+  }
+  async listWalletTxns(userId: string, limit: number): Promise<WalletTxn[]> {
+    const w = this.wallets.get(userId);
+    if (!w) return [];
+    return [...this.walletTxns.values()]
+      .filter((t) => t.wallet_id === w.id)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit);
+  }
+
+  // ---- P-15: shipment tracking ----
+  async addShipmentEvent(orderId: string, e: { event_type: ShipmentEventType; label_en?: string | null; label_ne?: string | null; location?: string | null }): Promise<ShipmentEvent> {
+    const row: ShipmentEvent = { id: randomUUID(), order_id: orderId, event_type: e.event_type, label_en: e.label_en ?? null, label_ne: e.label_ne ?? null, location: e.location ?? null, created_at: now() };
+    this.shipmentEvents.set(row.id, row);
+    return row;
+  }
+  async listShipmentEvents(orderId: string): Promise<ShipmentEvent[]> {
+    return [...this.shipmentEvents.values()]
+      .filter((e) => e.order_id === orderId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  // ---- P-16: nutrition ----
+  async searchFoods(q: string, limit: number): Promise<Food[]> {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [];
+    return [...this.foods.values()]
+      .filter((f) => `${f.name_en} ${f.name_ne ?? ""} ${f.name_ro ?? ""}`.toLowerCase().includes(needle))
+      .sort((a, b) => a.name_en.localeCompare(b.name_en))
+      .slice(0, limit);
+  }
+  async createDietPlan(p: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; protein_target_g?: number | null; items?: unknown[]; created_by?: string | null }): Promise<DietPlan> {
+    const row: DietPlan = {
+      id: randomUUID(), title_en: p.title_en, title_ne: p.title_ne ?? null,
+      title_ro: p.title_ro ?? null, description_en: p.description_en ?? null,
+      description_ne: p.description_ne ?? null, protein_target_g: p.protein_target_g ?? null,
+      items: p.items ?? [], is_active: true, created_by: p.created_by ?? null,
+      created_at: now(),
+    };
+    this.dietPlans.set(row.id, row);
+    return row;
+  }
+  async listDietPlans(activeOnly: boolean): Promise<DietPlan[]> {
+    return [...this.dietPlans.values()]
+      .filter((p) => !activeOnly || p.is_active)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async getDietPlan(id: string): Promise<DietPlan | null> { return this.dietPlans.get(id) ?? null; }
+  async updateDietPlan(id: string, patch: Partial<Pick<DietPlan, "title_en" | "title_ne" | "title_ro" | "description_en" | "description_ne" | "protein_target_g" | "items" | "is_active">>): Promise<DietPlan | null> {
+    const p = this.dietPlans.get(id); if (!p) return null;
+    Object.assign(p, patch);
+    return p;
+  }
+  async assignDietPlan(planId: string, userId: string, assignedBy: string | null, startsOn?: string | null): Promise<DietAssignment> {
+    const row: DietAssignment = { id: randomUUID(), plan_id: planId, user_id: userId, assigned_by: assignedBy, starts_on: startsOn ?? null, created_at: now() };
+    this.dietAssignments.set(row.id, row);
+    return row;
+  }
+  async getDietAssignment(userId: string): Promise<(DietAssignment & { plan: DietPlan | null }) | null> {
+    const rows = [...this.dietAssignments.values()]
+      .filter((a) => a.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const a = rows[0];
+    if (!a) return null;
+    return { ...a, plan: this.dietPlans.get(a.plan_id) ?? null };
+  }
+  async logHabit(userId: string, logDate: string, habitKey: string, done: boolean, note?: string | null): Promise<HabitLog> {
+    const key = `${userId}:${logDate}:${habitKey}`;
+    const prev = this.habitLogs.get(key);
+    if (prev) { prev.done = done; prev.note = note ?? null; return prev; }
+    const row: HabitLog = { id: randomUUID(), user_id: userId, log_date: logDate, habit_key: habitKey, done, note: note ?? null, created_at: now() };
+    this.habitLogs.set(key, row);
+    return row;
+  }
+  async listHabitLogs(userId: string, from: string, to: string): Promise<HabitLog[]> {
+    return [...this.habitLogs.values()]
+      .filter((h) => h.user_id === userId && h.log_date >= from && h.log_date <= to)
+      .sort((a, b) => a.log_date.localeCompare(b.log_date) || a.habit_key.localeCompare(b.habit_key));
+  }
+
+  // ---- P-17: milestones + coach messaging ----
+  async createMilestone(m: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; kind?: string; threshold?: number | null; created_by?: string | null }): Promise<Milestone> {
+    const row: Milestone = {
+      id: randomUUID(), title_en: m.title_en, title_ne: m.title_ne ?? null,
+      title_ro: m.title_ro ?? null, description_en: m.description_en ?? null,
+      description_ne: m.description_ne ?? null, kind: m.kind ?? "general",
+      threshold: m.threshold ?? null, is_active: true,
+      created_by: m.created_by ?? null, created_at: now(),
+    };
+    this.milestones.set(row.id, row);
+    return row;
+  }
+  async listMilestones(activeOnly: boolean): Promise<Milestone[]> {
+    return [...this.milestones.values()]
+      .filter((m) => !activeOnly || m.is_active)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async awardMilestone(milestoneId: string, userId: string): Promise<UserMilestone | null> {
+    const key = `${milestoneId}:${userId}`;
+    if (this.userMilestones.has(key)) return null;
+    const row: UserMilestone = { id: randomUUID(), milestone_id: milestoneId, user_id: userId, achieved_at: now() };
+    this.userMilestones.set(key, row);
+    return row;
+  }
+  async listUserMilestones(userId: string): Promise<(UserMilestone & { milestone: Milestone | null })[]> {
+    return [...this.userMilestones.values()]
+      .filter((u) => u.user_id === userId)
+      .sort((a, b) => b.achieved_at.localeCompare(a.achieved_at))
+      .map((u) => ({ ...u, milestone: this.milestones.get(u.milestone_id) ?? null }));
+  }
+  async getOrCreateCoachThread(customerId: string): Promise<CoachThread> {
+    for (const t of this.coachThreads.values()) if (t.customer_id === customerId) return t;
+    const row: CoachThread = { id: randomUUID(), customer_id: customerId, coach_id: null, created_at: now() };
+    this.coachThreads.set(row.id, row);
+    return row;
+  }
+  async listCoachThreads(coachId: string): Promise<(CoachThread & { customer_name: string | null })[]> {
+    return [...this.coachThreads.values()]
+      .filter((t) => t.coach_id === coachId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((t) => ({ ...t, customer_name: this.profiles.get(t.customer_id)?.name ?? null }));
+  }
+  async sendCoachMessage(threadId: string, senderId: string, senderRole: string, body: string, clientMessageId?: string | null): Promise<CoachMessage> {
+    if (clientMessageId) {
+      for (const m of this.coachMessages.values()) {
+        if (m.thread_id === threadId && m.client_message_id === clientMessageId) return m; // idempotent
+      }
+    }
+    const row: CoachMessage = { id: randomUUID(), thread_id: threadId, sender_id: senderId, sender_role: senderRole, body, client_message_id: clientMessageId ?? null, created_at: now() };
+    this.coachMessages.set(row.id, row);
+    return row;
+  }
+  async listCoachMessages(threadId: string): Promise<CoachMessage[]> {
+    return [...this.coachMessages.values()]
+      .filter((m) => m.thread_id === threadId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
 }

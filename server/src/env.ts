@@ -29,5 +29,11 @@ export const env = {
   khaltiPublicKey: opt("KHALTI_PUBLIC_KEY"),
   khaltiSecretKey: opt("KHALTI_SECRET_KEY"),
   publicBaseUrl: opt("PUBLIC_BASE_URL", "http://localhost:3000"),
+  // v1.3.0 forced-update check (P-4): served by GET /api/v1/app/version.
+  // Rabindra-owned: host the JSON + APK and set these. Until set, the
+  // endpoint honestly reports configured:false and apps must not nag.
+  appLatestVersionCode: parseInt(opt("APP_LATEST_VERSION_CODE", "0"), 10),
+  appApkUrl: opt("APP_APK_URL"),
+  appForceUpdate: opt("APP_FORCE_UPDATE", "false").toLowerCase() === "true",
   get hasSupabase() { return !!(this.supabaseUrl && this.supabaseServiceKey); },
 };

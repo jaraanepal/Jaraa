@@ -400,6 +400,10 @@ export const scansApi = {
   deletePhoto: (id: string, photoId: string) =>
     request<void>(`/scans/${id}/photos/${photoId}`, { method: "DELETE" }),
   getRootMap: (id: string) => request<RootMap>(`/scans/${id}/root-map`),
+  /** POST /scans/:id/answers — persist Jara/interview answers; the server recomputes root scores and may raise red flags (409). */
+  saveAnswers: (id: string, answers: Record<string, unknown>) =>
+    request<{ saved: number; answers: Record<string, unknown>; root_scores_recomputed: boolean; red_flags_raised: unknown[] }>(
+      `/scans/${id}/answers`, { method: "POST", body: json({ answers }) }),
   submit: (id: string) => request<Case>(`/scans/${id}/submit`, { method: "POST", body: json({}) }),
 };
 

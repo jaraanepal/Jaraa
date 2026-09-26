@@ -35,6 +35,13 @@ import type {
   CoachFeedback, StreakFreeze, CustomerTag, CoachHandover, CoachTip, ChallengeSurvey, JourneyStage,
   AppFeedback, KitReminder, KitUsage,
   User, Role, Profile, Consent, OtpRow, Scan, TimelineEvent, Photo, PhotoAngle,
+  // P-5..P-17
+  ReturnRequest, RefundStatus, LabProvider, LabTest, LabBookingStatus, LabBooking,
+  LabReport, FamilyMember, IdempotencyRecord, AiConversation, AiMessage,
+  ArticleView, QaQuestion, QaQuestionStatus, QaAnswer, QaFlag,
+  ReferralCode, Referral, CoinLedgerEntry, Wallet, WalletTxnKind, WalletTxn,
+  ShipmentEventType, ShipmentEvent, Food, DietPlan, DietAssignment, HabitLog,
+  Milestone, UserMilestone, CoachThread, CoachMessage,
 } from "./types";
 
 export interface Store {
@@ -744,4 +751,92 @@ export interface Store {
   getReorderSuggestions(userId: string): Promise<{ kit_id: string; kit_name: string; ordered_at: string }[]>;
   /** U45: own recent sessions (from refresh tokens, no token values). */
   listOwnSessions(userId: string): Promise<{ id: string; created_at: string; last_used_at: string | null }[]>;
+
+  /* ================= P-5..P-17 (v1.4 backend) ================= */
+  // P-5: returns + customer-visible refunds
+  createReturnRequest(r: { order_id: string; user_id: string; reason: string }): Promise<ReturnRequest>;
+  listReturnRequestsByUser(userId: string): Promise<ReturnRequest[]>;
+  listReturnRequests(status?: string): Promise<ReturnRequest[]>;
+  updateReturnRequest(id: string, patch: { status: ReturnRequest["status"]; decided_by?: string | null }): Promise<ReturnRequest | null>;
+  listRefundsByUser(userId: string): Promise<Refund[]>;
+  updateRefundStatus(id: string, status: RefundStatus, decidedBy: string): Promise<Refund | null>;
+  // P-6: labs
+  createLabProvider(p: { name_en: string; name_ne?: string | null; note?: string | null }): Promise<LabProvider>;
+  listLabProviders(): Promise<LabProvider[]>;
+  createLabTest(t: { provider_id?: string | null; name_en: string; name_ne?: string | null; description_en?: string | null; description_ne?: string | null; price_npr: number }): Promise<LabTest>;
+  listLabTests(activeOnly: boolean): Promise<LabTest[]>;
+  getLabTest(id: string): Promise<LabTest | null>;
+  updateLabTest(id: string, patch: Partial<Pick<LabTest, "name_en" | "name_ne" | "description_en" | "description_ne" | "price_npr" | "is_active">>): Promise<LabTest | null>;
+  createLabBooking(b: { user_id: string; test_id: string; scheduled_on?: string | null; slot?: string | null; address: Record<string, unknown>; phone: string }): Promise<LabBooking>;
+  listLabBookingsByUser(userId: string): Promise<LabBooking[]>;
+  listLabBookings(status?: string): Promise<LabBooking[]>;
+  getLabBooking(id: string): Promise<LabBooking | null>;
+  updateLabBookingStatus(id: string, status: LabBookingStatus): Promise<LabBooking | null>;
+  attachLabReport(bookingId: string, storagePath: string, uploadedBy: string | null): Promise<LabReport>;
+  getLabReport(bookingId: string): Promise<LabReport | null>;
+  // P-7: family profiles
+  createFamilyMember(m: { owner_id: string; name: string; relation?: string | null }): Promise<FamilyMember>;
+  listFamilyMembers(ownerId: string): Promise<FamilyMember[]>;
+  getFamilyMember(id: string): Promise<FamilyMember | null>;
+  getFamilyMemberByToken(token: string): Promise<FamilyMember | null>;
+  acceptFamilyInvite(token: string, memberUserId: string): Promise<FamilyMember | null>;
+  setFamilyMemberShare(id: string, shared: boolean): Promise<FamilyMember | null>;
+  removeFamilyMember(id: string): Promise<boolean>;
+  // P-8: idempotency + sync
+  getIdempotencyRecord(key: string, userId: string, scope: string): Promise<IdempotencyRecord | null>;
+  saveIdempotencyRecord(r: { key: string; user_id: string; scope: string; response: unknown }): Promise<void>;
+  // P-9: AI assistant (education-only)
+  createAiConversation(userId: string): Promise<AiConversation>;
+  listAiConversations(userId: string): Promise<AiConversation[]>;
+  addAiMessage(conversationId: string, role: "user" | "assistant", body: string, redFlagged?: boolean): Promise<AiMessage>;
+  listAiMessages(conversationId: string): Promise<AiMessage[]>;
+  // P-10/P-11: content
+  listPublishedArticles(category?: string): Promise<EducationArticle[]>;
+  recordArticleView(articleId: string, userId: string): Promise<void>;
+  getArticleViewCount(articleId: string): Promise<number>;
+  // P-12: community Q&A
+  createQaQuestion(userId: string, title: string, body: string): Promise<QaQuestion>;
+  listQaQuestions(opts: { status?: string; limit: number; offset: number }): Promise<{ questions: QaQuestion[]; total: number }>;
+  getQaQuestion(id: string): Promise<QaQuestion | null>;
+  updateQaQuestionStatus(id: string, status: QaQuestionStatus): Promise<QaQuestion | null>;
+  createQaAnswer(questionId: string, doctorId: string, body: string): Promise<QaAnswer>;
+  listQaAnswers(questionId: string): Promise<QaAnswer[]>;
+  agreeQaAnswer(answerId: string, doctorId: string): Promise<boolean>;
+  setQaHelpful(answerId: string, userId: string, helpful: boolean): Promise<void>;
+  flagQaContent(f: { question_id?: string | null; answer_id?: string | null; user_id: string; reason: string }): Promise<QaFlag>;
+  listQaFlags(): Promise<QaFlag[]>;
+  // P-13: referrals + coins
+  getOrCreateReferralCode(userId: string): Promise<ReferralCode>;
+  getReferralCode(code: string): Promise<ReferralCode | null>;
+  applyReferralCode(referredId: string, code: string): Promise<Referral>;
+  completeReferralForUser(referredId: string): Promise<Referral | null>;
+  grantCoins(userId: string, amount: number, reason: string, refType?: string | null, refId?: string | null): Promise<CoinLedgerEntry>;
+  getCoinBalance(userId: string): Promise<number>;
+  listCoinLedger(userId: string, limit: number): Promise<CoinLedgerEntry[]>;
+  // P-14: wallet
+  getOrCreateWallet(userId: string): Promise<Wallet>;
+  addWalletTxn(userId: string, amountNpr: number, kind: WalletTxnKind, ref?: string | null): Promise<WalletTxn>;
+  listWalletTxns(userId: string, limit: number): Promise<WalletTxn[]>;
+  // P-15: shipment tracking
+  addShipmentEvent(orderId: string, e: { event_type: ShipmentEventType; label_en?: string | null; label_ne?: string | null; location?: string | null }): Promise<ShipmentEvent>;
+  listShipmentEvents(orderId: string): Promise<ShipmentEvent[]>;
+  // P-16: nutrition
+  searchFoods(q: string, limit: number): Promise<Food[]>;
+  createDietPlan(p: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; protein_target_g?: number | null; items?: unknown[]; created_by?: string | null }): Promise<DietPlan>;
+  listDietPlans(activeOnly: boolean): Promise<DietPlan[]>;
+  getDietPlan(id: string): Promise<DietPlan | null>;
+  updateDietPlan(id: string, patch: Partial<Pick<DietPlan, "title_en" | "title_ne" | "title_ro" | "description_en" | "description_ne" | "protein_target_g" | "items" | "is_active">>): Promise<DietPlan | null>;
+  assignDietPlan(planId: string, userId: string, assignedBy: string | null, startsOn?: string | null): Promise<DietAssignment>;
+  getDietAssignment(userId: string): Promise<(DietAssignment & { plan: DietPlan | null }) | null>;
+  logHabit(userId: string, logDate: string, habitKey: string, done: boolean, note?: string | null): Promise<HabitLog>;
+  listHabitLogs(userId: string, from: string, to: string): Promise<HabitLog[]>;
+  // P-17: milestones + coach messaging
+  createMilestone(m: { title_en: string; title_ne?: string | null; title_ro?: string | null; description_en?: string | null; description_ne?: string | null; kind?: string; threshold?: number | null; created_by?: string | null }): Promise<Milestone>;
+  listMilestones(activeOnly: boolean): Promise<Milestone[]>;
+  awardMilestone(milestoneId: string, userId: string): Promise<UserMilestone | null>;
+  listUserMilestones(userId: string): Promise<(UserMilestone & { milestone: Milestone | null })[]>;
+  getOrCreateCoachThread(customerId: string): Promise<CoachThread>;
+  listCoachThreads(coachId: string): Promise<(CoachThread & { customer_name: string | null })[]>;
+  sendCoachMessage(threadId: string, senderId: string, senderRole: string, body: string, clientMessageId?: string | null): Promise<CoachMessage>;
+  listCoachMessages(threadId: string): Promise<CoachMessage[]>;
 }

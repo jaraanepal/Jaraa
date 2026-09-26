@@ -736,3 +736,167 @@ export interface KitUsage {
   id: string; user_id: string; kit_id: string | null; used_at: string;
   note: string | null; created_at: string;
 }
+
+/* ================= P-5..P-17 (v1.4 backend) ================= */
+
+/** P-5: customer return request. */
+export interface ReturnRequest {
+  id: string; order_id: string; user_id: string; reason: string;
+  status: "requested" | "approved" | "rejected" | "picked_up" | "completed";
+  created_at: string; decided_at: string | null; decided_by: string | null;
+}
+
+/** P-5: refund with lifecycle status (refunds table gains `status`). */
+export type RefundStatus = "pending" | "approved" | "rejected" | "processed";
+
+/** P-6: lab provider config entity — EMPTY until a real partner exists. */
+export interface LabProvider {
+  id: string; name_en: string; name_ne: string | null; is_active: boolean;
+  note: string | null; created_at: string;
+}
+
+/** P-6: lab test catalog row. */
+export interface LabTest {
+  id: string; provider_id: string | null; name_en: string; name_ne: string | null;
+  description_en: string | null; description_ne: string | null;
+  price_npr: number; is_active: boolean; created_at: string;
+}
+
+export type LabBookingStatus = "booked" | "sample_collected" | "report_ready" | "cancelled";
+
+/** P-6: at-home lab booking. */
+export interface LabBooking {
+  id: string; user_id: string; test_id: string; scheduled_on: string | null;
+  slot: string | null; address: Record<string, unknown>; phone: string;
+  status: LabBookingStatus; created_at: string; updated_at: string;
+}
+
+/** P-6: uploaded lab report (report file lives in existing storage). */
+export interface LabReport {
+  id: string; booking_id: string; storage_path: string;
+  uploaded_by: string | null; created_at: string;
+}
+
+/** P-7: family member under one account. member_user_id is set on invite accept. */
+export interface FamilyMember {
+  id: string; owner_id: string; member_user_id: string | null;
+  name: string; relation: string | null;
+  status: "invited" | "active"; invite_token: string | null;
+  data_shared: boolean; created_at: string;
+}
+
+/** P-8: generic idempotency record for mutations. */
+export interface IdempotencyRecord {
+  key: string; user_id: string; scope: string;
+  response: unknown; created_at: string;
+}
+
+/** P-9: AI conversation + messages (education only, never diagnosis). */
+export interface AiConversation {
+  id: string; user_id: string; created_at: string;
+}
+export interface AiMessage {
+  id: string; conversation_id: string; role: "user" | "assistant";
+  body: string; red_flagged: boolean; created_at: string;
+}
+
+/** P-11: published content feed row (extends EducationArticle with category/views). */
+export interface ArticleView {
+  id: string; article_id: string; user_id: string; created_at: string;
+}
+
+/** P-12: community Q&A. */
+export type QaQuestionStatus = "open" | "answered" | "flagged" | "hidden";
+export interface QaQuestion {
+  id: string; user_id: string; title: string; body: string;
+  status: QaQuestionStatus; created_at: string; updated_at: string;
+}
+export interface QaAnswer {
+  id: string; question_id: string; doctor_id: string; body: string;
+  agree_count: number; helpful_count: number;
+  created_at: string; updated_at: string;
+}
+export interface QaFlag {
+  id: string; question_id: string | null; answer_id: string | null;
+  user_id: string; reason: string; created_at: string;
+}
+
+/** P-13: referral code + attribution (fires only after Root Scan completion). */
+export interface ReferralCode {
+  id: string; user_id: string; code: string; created_at: string;
+}
+export interface Referral {
+  id: string; referrer_id: string; referred_id: string; code: string;
+  status: "pending" | "completed"; completed_at: string | null; created_at: string;
+}
+
+/** P-13/Root Coins: immutable coin ledger. */
+export interface CoinLedgerEntry {
+  id: string; user_id: string; amount: number; reason: string;
+  ref_type: string | null; ref_id: string | null; created_at: string;
+}
+
+/** P-14: wallet + immutable transaction ledger. */
+export interface Wallet {
+  id: string; user_id: string; balance_npr: number; updated_at: string;
+}
+export type WalletTxnKind = "cashback" | "cod_change" | "adjustment";
+export interface WalletTxn {
+  id: string; wallet_id: string; amount_npr: number; kind: WalletTxnKind;
+  ref: string | null; created_at: string;
+}
+
+/** P-15: shipment tracking event (customer-visible milestones). */
+export type ShipmentEventType =
+  | "packed" | "shipped" | "hub_arrival" | "out_for_delivery"
+  | "delivered" | "delayed" | "failed";
+export interface ShipmentEvent {
+  id: string; order_id: string; event_type: ShipmentEventType;
+  label_en: string | null; label_ne: string | null; location: string | null;
+  created_at: string;
+}
+
+/** P-16: food DB row — source is ALWAYS 'estimate' until verified. */
+export interface Food {
+  id: string; name_en: string; name_ne: string | null; name_ro: string | null;
+  protein_g: number; calories: number; serving: string;
+  source: string; created_at: string;
+}
+
+/** P-16: diet plan template (admin) + assignment. */
+export interface DietPlan {
+  id: string; title_en: string; title_ne: string | null; title_ro: string | null;
+  description_en: string | null; description_ne: string | null;
+  protein_target_g: number | null; items: unknown[];
+  is_active: boolean; created_by: string | null; created_at: string;
+}
+export interface DietAssignment {
+  id: string; plan_id: string; user_id: string;
+  assigned_by: string | null; starts_on: string | null; created_at: string;
+}
+
+/** P-16: daily habit check-in (idempotent per user+date+habit). */
+export interface HabitLog {
+  id: string; user_id: string; log_date: string; habit_key: string;
+  done: boolean; note: string | null; created_at: string;
+}
+
+/** P-17: milestone definition + per-user achievement. */
+export interface Milestone {
+  id: string; title_en: string; title_ne: string | null; title_ro: string | null;
+  description_en: string | null; description_ne: string | null;
+  kind: string; threshold: number | null;
+  is_active: boolean; created_by: string | null; created_at: string;
+}
+export interface UserMilestone {
+  id: string; milestone_id: string; user_id: string; achieved_at: string;
+}
+
+/** P-17: coach messaging thread + messages. */
+export interface CoachThread {
+  id: string; customer_id: string; coach_id: string | null; created_at: string;
+}
+export interface CoachMessage {
+  id: string; thread_id: string; sender_id: string; sender_role: string;
+  body: string; client_message_id: string | null; created_at: string;
+}
