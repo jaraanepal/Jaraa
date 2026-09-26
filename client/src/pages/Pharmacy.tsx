@@ -22,13 +22,9 @@ import type {
   Substitution,
 } from "../api/b4pharmacy";
 
+import { nextFulfilmentStep } from "../lib/pharmacySteps";
+
 const PIPELINE: OrderStatus[] = ["pending_payment", "paid", "packed", "shipped", "delivered"];
-/** Next actionable status per current status (pharmacy fulfilment advance). */
-const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; labelKey: string }>> = {
-  paid: { to: "packed", labelKey: "pharmacy.markPacked" },
-  packed: { to: "shipped", labelKey: "pharmacy.markShipped" },
-  shipped: { to: "delivered", labelKey: "pharmacy.markDelivered" },
-};
 
 const ACTIONABLE: OrderStatus[] = ["pending_payment", "paid", "packed", "shipped"];
 const HOURS_24 = 24 * 3_600_000;
@@ -1134,7 +1130,7 @@ function BulkAdvance({ orders, onDone }: { orders: Order[]; onDone: () => void }
   const groups = useMemo(() => {
     const m = new Map<OrderStatus, string[]>();
     for (const o of orders) {
-      const step = NEXT[o.status];
+      const step = nextFulfilmentStep(o);
       if (!step) continue;
       const arr = m.get(step.to) ?? [];
       arr.push(o.id);
@@ -1736,7 +1732,7 @@ export default function Pharmacy() {
   useEffect(load, [t]);
 
   const advance = async (o: Order) => {
-    const step = NEXT[o.status];
+    const step = nextFulfilmentStep(o);
     if (!step || updating) return;
     setUpdating(o.id);
     setNotice(null);
@@ -1942,7 +1938,7 @@ export default function Pharmacy() {
 
       {filtered.map((o) => {
         const idx = PIPELINE.indexOf(o.status);
-        const step = NEXT[o.status];
+        const step = nextFulfilmentStep(o);
         const prio = isPriority(o, now);
         const isOpen = expanded === o.id;
         const waitingHours = Math.max(0, Math.floor((now - Date.parse(o.created_at)) / 3_600_000));
