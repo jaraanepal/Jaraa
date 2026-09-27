@@ -6,6 +6,7 @@ import type {
   CaseMessage,
   ChallengeGroup, Badge, SessionSummary, CustomerGoal, HabitTemplate, NoteTemplate,
   CoachAvailability,
+  CoachAssignment, CoachFollowup,
   CoachNote, Escalation, EscalationStatus, ScheduledNudge, SatisfactionRating, WishlistItem,
   CommunityTip,
   Dispute,
@@ -522,6 +523,27 @@ export interface Store {
 
   /** C26 — Upsert the coach's availability (unique on coach_id). */
   setCoachAvailability(coachId: string, status: "available" | "on_leave", note?: string | null): Promise<CoachAvailability>;
+
+  /* ---------------- Problem 4 (v14): coach workflow ---------------- */
+  /** Assign a customer to a coach (upsert on customer_id). */
+  assignCustomerToCoach(coachId: string, customerId: string): Promise<CoachAssignment>;
+  /** Remove a customer's coach assignment, if any. */
+  unassignCustomer(customerId: string): Promise<void>;
+  /** Assignment rows for one coach (admins may pass a coach id, or use listAllCoachAssignments). */
+  listCoachAssignments(coachId: string): Promise<CoachAssignment[]>;
+  /** Every assignment row (admin overview). */
+  listAllCoachAssignments(): Promise<CoachAssignment[]>;
+  /** The coach a customer is assigned to, if any. */
+  getCoachAssignmentForCustomer(customerId: string): Promise<CoachAssignment | null>;
+  /** Schedule a follow-up appointment for a customer. */
+  createCoachFollowup(f: { customer_id: string; coach_id: string; scheduled_for: string; note: string }): Promise<CoachFollowup>;
+  /** Follow-up history for one customer (all statuses, scheduled_for desc). */
+  listCoachFollowups(customerId: string): Promise<CoachFollowup[]>;
+  /** Follow-ups across a coach's assigned customers. Optional status filter. */
+  listCoachFollowupsForCoach(coachId: string, status?: "pending" | "completed" | "cancelled"): Promise<(CoachFollowup & { customer_name: string | null })[]>;
+  /** Mark a follow-up complete. Returns null when not found / not this coach's.
+   *  Pass coachId=null to skip the ownership check (admin path). */
+  completeCoachFollowup(id: string, coachId: string | null): Promise<CoachFollowup | null>;
 
   /** C27 — Per-habit adherence detail. DEGRADED: progress_checkins has NO habit
    *  column, so there is no per-habit data. This reports done/total over the

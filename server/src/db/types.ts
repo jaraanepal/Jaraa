@@ -549,6 +549,23 @@ export interface CoachAvailability {
   updated_at: string;
 }
 
+/** Problem 4 (v14): one row per assigned customer — a customer has at most
+ *  one coach; reassignment moves the row. */
+export interface CoachAssignment {
+  id: string; coach_id: string; customer_id: string; assigned_at: string;
+}
+
+/** Problem 4 (v14): coach-scheduled follow-up appointment (date + note).
+ *  Pending = upcoming/overdue; completed = done (completed_at set).
+ *  Message delivery stays in scheduled_nudges; this is an appointment. */
+export interface CoachFollowup {
+  id: string; customer_id: string; coach_id: string;
+  scheduled_for: string; note: string;
+  status: "pending" | "completed" | "cancelled";
+  completed_at: string | null;
+  created_at: string;
+}
+
 
 /* ---------------- Batch 3 (009) — customer ---------------- */
 /** U21: case Q&A thread message. 009 table `case_messages`. */

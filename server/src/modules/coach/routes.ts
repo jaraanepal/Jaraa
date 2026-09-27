@@ -802,5 +802,152 @@ export function coachRoutes(deps: Deps): Router {
     res.json({ surveys: await store.listChallengeSurveys(req.params.id) });
   }));
 
+  /* ---------------- Problem 4 (v14): coach workflow ---------------- */
+  // Assigned customers + follow-up appointments. Tables: coach_assignments,
+  // coach_followups (migration 023). Habit accountability only — nothing here
+  // carries diagnosis or prescription content.
+
+  /** True when the caller may act on this customer (own assignment, or admin). */
+  async function mayCoachCustomer(callerId: string, callerRole: string, customerId: string): Promise<boolean> {
+    if (callerRole === "admin") return true;
+    const a = await store.getCoachAssignmentForCustomer(customerId);
+    return a?.coach_id === callerId;
+  }
+
+  async function assignedCustomerRow(customerId: string, assignedAt: string) {
+    const u = await store.getUserById(customerId);
+    if (!u || u.role !== "customer") return null;
+    const profile = await store.getProfile(u.id);
+    const plan = await store.getLatestApprovedPlanForUser(u.id);
+    const checkins = await store.listCheckins(u.id);
+    const followups = await store.listCoachFollowups(u.id);
+    const next = followups
+      .filter((f) => f.status === "pending")
+      .sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for))[0] ?? null;
+    return {
+      id: u.id,
+      name: profile?.name ?? null,
+      phone: u.phone,
+      plan_status: plan?.status ?? null,
+      last_checkin_at: checkins[0]?.created_at ?? null,
+      next_followup_at: next?.scheduled_for ?? null,
+      assigned_at: assignedAt,
+    };
+  }
+
+  // GET /coach/customers — the caller's assigned customers (admin: all
+  // assigned). The client's listCustomers 404'd before this shipped; it no
+  // longer does. ?q= filters by name/phone (server-side, case-insensitive).
+  r.get("/customers", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const assigns = me.role === "admin" ? await store.listAllCoachAssignments() : await store.listCoachAssignments(me.id);
+    const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+    const customers: unknown[] = [];
+    for (const a of assigns) {
+      const row = await assignedCustomerRow(a.customer_id, a.assigned_at);
+      if (!row) continue;
+      if (q && !((row.name ?? "").toLowerCase().includes(q) || (row.phone ?? "").includes(q))) continue;
+      customers.push(row);
+    }
+    res.json({ customers });
+  }));
+
+  // POST /coach/customers/:id/assign — assign a customer to a coach.
+  // Coaches assign to themselves; admins may pass coach_id to assign to a
+  // specific coach.
+  r.post("/customers/:id/assign", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const target = await store.getUserById(req.params.id);
+    if (!target || target.role !== "customer") throw notFound("Not found.");
+    let coachId = me.id;
+    if (me.role === "admin" && typeof req.body?.coach_id === "string" && req.body.coach_id.trim()) {
+      const c = await store.getUserById(req.body.coach_id.trim());
+      if (!c || (c.role !== "coach" && c.role !== "admin")) throw badRequest("Request failed validation.", { field: "coach_id" });
+      coachId = c.id;
+    }
+    const assignment = await store.assignCustomerToCoach(coachId, target.id);
+    await audit(store, { actorId: me.id, action: "coach.assign", entity: "coach_assignment", entityId: assignment.id, ip: clientIp(req) });
+    res.status(201).json({ assignment });
+  }));
+
+  // DELETE /coach/customers/:id/assign — remove a customer's assignment.
+  r.delete("/customers/:id/assign", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    if (!(await mayCoachCustomer(me.id, me.role, req.params.id))) throw notFound("Not found.");
+    await store.unassignCustomer(req.params.id);
+    await audit(store, { actorId: me.id, action: "coach.unassign", entity: "coach_assignment", entityId: req.params.id, ip: clientIp(req) });
+    res.status(204).end();
+  }));
+
+  // GET /coach/customers/:id/challenges — challenge assignments for the
+  // per-customer progress view.
+  r.get("/customers/:id/challenges", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const target = await store.getUserById(req.params.id);
+    if (!target || target.role !== "customer") throw notFound("Not found.");
+    if (!(await mayCoachCustomer(me.id, me.role, target.id))) throw forbidden("Not your assigned customer.");
+    res.json({ assignments: await store.listChallengeAssignments(target.id) });
+  }));
+
+  // GET /coach/customers/:id/followups — follow-up history for one customer
+  // (all statuses, scheduled_for desc).
+  r.get("/customers/:id/followups", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const target = await store.getUserById(req.params.id);
+    if (!target || target.role !== "customer") throw notFound("Not found.");
+    if (!(await mayCoachCustomer(me.id, me.role, target.id))) throw forbidden("Not your assigned customer.");
+    res.json({ followups: await store.listCoachFollowups(target.id) });
+  }));
+
+  // POST /coach/customers/:id/followups — schedule a follow-up appointment
+  // (future date + habit note; habits/motivation only, never medical).
+  r.post("/customers/:id/followups", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const target = await store.getUserById(req.params.id);
+    if (!target || target.role !== "customer") throw notFound("Not found.");
+    if (!(await mayCoachCustomer(me.id, me.role, target.id))) throw forbidden("Not your assigned customer.");
+    const { scheduled_for, note } = req.body ?? {};
+    const when = new Date(String(scheduled_for));
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      throw badRequest("Request failed validation.", { field: "scheduled_for" });
+    }
+    const clean = typeof note === "string" ? note.trim().slice(0, 500) : "";
+    const followup = await store.createCoachFollowup({
+      customer_id: target.id, coach_id: me.id,
+      scheduled_for: when.toISOString(), note: clean,
+    });
+    await audit(store, { actorId: me.id, action: "coach.followup.schedule", entity: "coach_followup", entityId: followup.id, ip: clientIp(req) });
+    res.status(201).json({ followup });
+  }));
+
+  // GET /coach/followups — upcoming + history across the caller's assigned
+  // customers. ?status=pending|completed|cancelled; default pending first.
+  r.get("/followups", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    if (status !== undefined && !["pending", "completed", "cancelled"].includes(status)) {
+      throw badRequest("Request failed validation.", { field: "status" });
+    }
+    const s = status as "pending" | "completed" | "cancelled" | undefined;
+    if (me.role === "admin") {
+      const assigns = await store.listAllCoachAssignments();
+      const coachIds = [...new Set(assigns.map((a) => a.coach_id))];
+      const all: unknown[] = [];
+      for (const cid of coachIds) all.push(...(await store.listCoachFollowupsForCoach(cid, s)));
+      res.json({ followups: all });
+      return;
+    }
+    res.json({ followups: await store.listCoachFollowupsForCoach(me.id, s) });
+  }));
+
+  // PATCH /coach/followups/:id/complete — mark a follow-up complete.
+  r.patch("/followups/:id/complete", requireCoach, asyncHandler(async (req: AuthedRequest, res) => {
+    const me = req.user!;
+    const followup = await store.completeCoachFollowup(req.params.id, me.role === "admin" ? null : me.id);
+    if (!followup) throw notFound("Not found.");
+    await audit(store, { actorId: me.id, action: "coach.followup.complete", entity: "coach_followup", entityId: followup.id, ip: clientIp(req) });
+    res.json({ followup });
+  }));
+
   return r;
 }

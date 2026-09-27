@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { coachApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLang } from "../i18n/LanguageContext";
@@ -11,6 +12,7 @@ import type { AssignedCustomer, Nudge } from "../api/types";
 import { CoachBatchTools } from "./coach/CoachBatch";
 import { CoachBatch4Tools } from "./coach/CoachBatch4";
 import { AvailabilityToggle } from "./coach/CoachBatch3";
+import { CoachFollowupsPanel } from "./coach/CoachFollowupsPanel";
 
 interface Card { title: string; body: string }
 
@@ -297,6 +299,25 @@ function CoachDashboard({ focusFollowups = false }: { focusFollowups?: boolean }
           {focus.length === 0 && (
             <EmptyState icon={<Icon.check size={32} />} title={t("coachDash.focusNone")} />
           )}
+
+          {/* Problem 4 (v14): entry point to the assigned-customers workflow. */}
+          {!focusFollowups && (
+            <Link to="/coach/customers" className="card" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+              <div className="rowflex">
+                <span style={{ color: "var(--green)" }}>
+                  <Icon.user size={22} />
+                </span>
+                <div>
+                  <b>{t("v14coach.myCustomers")}</b>
+                  <br />
+                  <span className="tiny muted">
+                    {t("v14coach.dashCard", { n: customers.length })}
+                  </span>
+                </div>
+                <span className="spacer">›</span>
+              </div>
+            </Link>
+          )}
           {focus.slice(0, 5).map((c) => {
             const overdue = due.includes(c);
             const d = daysSince(c.last_checkin_at);
@@ -430,5 +451,13 @@ export default function Coach() {
 export function CoachFollowups() {
   const { role } = useAuth();
   if (role !== "coach") return <CustomerCoachView />;
-  return <CoachDashboard focusFollowups />;
+  return (
+    <>
+      <CoachDashboard focusFollowups />
+      {/* Problem 4 (v14): scheduled follow-ups with complete + history. */}
+      <div className="screen" style={{ paddingTop: 0 }}>
+        <CoachFollowupsPanel />
+      </div>
+    </>
+  );
 }

@@ -118,16 +118,26 @@ function BottomNav() {
 }
 
 /**
- * Role-aware left sidebar drawer (Problem 2):
- * - customers: Scan, My Plan, Orders, Video consult, Settings (v3 behavior)
- * - admin: dashboard, kits, orders, staff/users, flags, audit
- * - doctor: review queue, reviewed plans, profile
- * - pharmacy: fulfilment queue, profile
- * - coach: my customers, follow-ups, profile
+ * Role-aware left sidebar drawer (v14 — every role's sidebar lists ALL pages
+ * available to that role):
+ * - customers: home, scan, plan, progress, kits, habits, orders, wishlist,
+ *   challenges, referral, teleconsult, notifications, help, my data, profile
+ * - admin: dashboard, kits, orders, staff/users, flags, audit, broadcast,
+ *   refunds, sla, verifications, finance, payouts, plan templates, tickets,
+ *   articles, cases, kit analytics, tools, profile
+ * - doctor: queue, reviewed, patients, follow-ups, availability, activity,
+ *   archived, second opinions, calendar, triage presets, digest, tools,
+ *   notifications, profile
+ * - pharmacy: queue, adjust stock, manifest, expiry, claims, holidays,
+ *   reports, fulfilment performance, damaged-stock quarantine, shift summary,
+ *   courier performance, return-rate analytics, packaging materials,
+ *   COD reconciliation, tools, notifications, profile
+ * - coach: dashboard, my customers, follow-ups, tools, notifications, profile
  * Every drawer ends with Settings (language) + a two-step Log out.
  */
-/** Role-aware nav links (Problem 2) — shared by the mobile drawer and the
-    desktop staff side nav, so both always show the same items. */
+/** Role-aware nav links (Problem 2, v14) — shared by the mobile drawer and the
+    desktop staff side nav, so both always show the same items. Every role's
+    sidebar lists ALL pages available to that role (v14 problems 1-4). */
 function roleLinks(role: string | null): NavItem[] {
   return role === "admin"
   ? [
@@ -143,8 +153,11 @@ function roleLinks(role: string | null): NavItem[] {
       { to: "/admin/sla", key: "p12.admin.sla", icon: Icon.clock },
       { to: "/admin/verifications", key: "p12.admin.verification", icon: Icon.check },
       { to: "/admin/finance", key: "p12.admin.finance", icon: Icon.chart },
+      { to: "/admin/payouts", key: "p12c.admin.payouts.title", icon: Icon.chart },
+      { to: "/admin/plan-templates", key: "p12c.admin.planTemplates.title", icon: Icon.doc },
       { to: "/admin/tickets", key: "p12.admin.tickets", icon: Icon.chat },
       { to: "/admin/articles", key: "p12.admin.articles", icon: Icon.book },
+      { to: "/admin/cases", key: "adminCases.title", icon: Icon.doc },
       { to: "/admin/kit-analytics", key: "p12.admin.kitAnalytics", icon: Icon.box },
       { to: "/admin/tools", key: "p12b.admin.title", icon: Icon.gear },
       { to: "/admin/profile", key: "nav.profile", icon: Icon.user },
@@ -153,35 +166,65 @@ function roleLinks(role: string | null): NavItem[] {
     ? [
         { to: "/doctor", key: "nav.doctor", icon: Icon.doc, end: true },
         { to: "/doctor/reviewed", key: "doctorDash.reviewedTab", icon: Icon.check },
+        { to: "/doctor/patients", key: "p12.doctor.patientsTab", icon: Icon.user },
         { to: "/doctor/followups", key: "p12.doctor.followups", icon: Icon.chat },
         { to: "/doctor/availability", key: "p12.doctor.availability", icon: Icon.clock },
+        { to: "/doctor/activity", key: "v14doctor.navActivity", icon: Icon.chart },
+        { to: "/doctor/archived", key: "p12c.doctor.archivedBadge", icon: Icon.box },
+        { to: "/doctor/second-opinions", key: "p12c.doctor.soTitle", icon: Icon.doc },
+        { to: "/doctor/calendar", key: "p12c.doctor.calTitle", icon: Icon.clock },
+        { to: "/doctor/triage-presets", key: "p12c.doctor.tpTitle", icon: Icon.gear },
+        { to: "/doctor/digest", key: "v14doctor.navDigest", icon: Icon.book },
         { to: "/doctor/tools", key: "p12b.doctor.title", icon: Icon.gear },
+        { to: "/notifications", key: "nav.notifications", icon: Icon.alert },
         { to: "/doctor/profile", key: "nav.profile", icon: Icon.user },
       ]
     : role === "pharmacy"
       ? [
           { to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck, end: true },
+          { to: "/pharmacy/queue", key: "pharmacy.queueTitle", icon: Icon.clock },
+          { to: "/pharmacy/stock", key: "p12.pharmacy.adjustStock", icon: Icon.box },
+          { to: "/pharmacy/manifest", key: "p12d.pharmacy.tabManifest", icon: Icon.doc },
+          { to: "/pharmacy/expiry", key: "p12d.pharmacy.tabExpiry", icon: Icon.alert },
+          { to: "/pharmacy/claims", key: "p12d.pharmacy.tabClaims", icon: Icon.chat },
+          { to: "/pharmacy/holidays", key: "p12d.pharmacy.tabHolidays", icon: Icon.clock },
+          { to: "/pharmacy/reports", key: "p12d.pharmacy.tabReports", icon: Icon.chart },
+          { to: "/pharmacy/performance", key: "p12.pharmacy.performance", icon: Icon.chart },
+          { to: "/pharmacy/quarantine", key: "p12c.pharmacy.quarantineTitle", icon: Icon.alert },
+          { to: "/pharmacy/shift", key: "p12c.pharmacy.shiftTitle", icon: Icon.user },
+          { to: "/pharmacy/couriers", key: "p12c.pharmacy.courierTitle", icon: Icon.truck },
+          { to: "/pharmacy/returns", key: "p12c.pharmacy.returnsTitle", icon: Icon.box },
+          { to: "/pharmacy/packaging", key: "p12c.pharmacy.packagingTitle", icon: Icon.box },
+          { to: "/pharmacy/cod", key: "p12c.pharmacy.codTitle", icon: Icon.chart },
           { to: "/pharmacy/tools", key: "p12b.pharmacy.title", icon: Icon.gear },
+          { to: "/notifications", key: "nav.notifications", icon: Icon.alert },
           { to: "/pharmacy/profile", key: "nav.profile", icon: Icon.user },
         ]
       : role === "coach"
         ? [
             { to: "/coach", key: "nav.coach", icon: Icon.book, end: true },
+            { to: "/coach/customers", key: "v14coach.myCustomers", icon: Icon.user },
             { to: "/coach/followups", key: "coachDash.followups", icon: Icon.chat },
             { to: "/coach/tools", key: "p12b.coach.title", icon: Icon.gear },
+            { to: "/notifications", key: "nav.notifications", icon: Icon.alert },
             { to: "/coach/profile", key: "nav.profile", icon: Icon.user },
           ]
         : [
+            { to: "/", key: "nav.home", icon: Icon.home, end: true },
             { to: "/scan", key: "nav.scan", icon: Icon.scan },
             { to: "/plan", key: "nav.plan", icon: Icon.plan },
+            { to: "/progress", key: "nav.progress", icon: Icon.chart },
+            { to: "/kits", key: "nav.kits", icon: Icon.box },
             { to: "/habits", key: "p12.customer.habitCheckin", icon: Icon.check },
             { to: "/orders", key: "nav.orders", icon: Icon.truck },
             { to: "/wishlist", key: "p12.customer.wishlist", icon: Icon.box },
             { to: "/my-challenges", key: "p12.customer.myChallenges", icon: Icon.chart },
             { to: "/referral", key: "p12.customer.referral", icon: Icon.user },
+            { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
+            { to: "/notifications", key: "nav.notifications", icon: Icon.alert },
             { to: "/help", key: "p12.customer.help", icon: Icon.chat },
             { to: "/my-data", key: "p12.customer.myData", icon: Icon.doc },
-            { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
+            { to: "/profile", key: "nav.profile", icon: Icon.user },
           ];
 }
 

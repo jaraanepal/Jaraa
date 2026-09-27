@@ -9,7 +9,8 @@ import type {
 import { useLang } from "../../i18n/LanguageContext";
 import { Chip, ErrorCard, Loading, Modal, NoticeBox, ScoreBar, apiErrorMessage, toast } from "../../components/ui";
 import { Icon } from "../../components/icons";
-import type { AnnotationShape, Case, Kit, PatientCase, PlanItemKind, RedFlag, RootKey, ScanDetail } from "../../api/types";
+import type { AnnotationShape, Case, FollowUp, Kit, PatientCase, Photo, PlanItemKind, RedFlag, RootKey, RootScores, ScanDetail, TimelineEvent } from "../../api/types";
+import { ApiError } from "../../api/types";
 
 interface ComposerItem {
   kind: PlanItemKind;
@@ -209,6 +210,82 @@ function DrawPanel({
   );
 }
 
+/**
+ * v14: the GET /doctor/cases/:id payload carries the scan context inline
+ * (answers, timeline, photos with signed URLs, scores, flags) so the page
+ * survives a failed /scans/:id fetch — that route is owner-only and 404s
+ * for doctors.
+ */
+interface CaseDetailPayload extends Case {
+  scan?: { id: string; status: string; answers?: Record<string, unknown> | null; version?: number } | null;
+  timeline_events?: TimelineEvent[];
+  photos?: Array<Photo & { thumb_url?: string | null; signed_url?: string | null }>;
+  root_scores?: Array<{ root: string; score: number }>;
+  red_flags?: RedFlag[];
+}
+
+/** Build a ScanDetail from the case-detail payload (fallback only). */
+function scanFromCasePayload(c: CaseDetailPayload, scanId: string): ScanDetail {
+  const photos: Photo[] = (c.photos ?? [])
+    .filter((p) => p.thumb_url || p.signed_url)
+    .map((p) => ({
+      id: p.id,
+      scan_id: p.scan_id,
+      angle: p.angle,
+      thumb_url: p.thumb_url ?? p.signed_url ?? "",
+      signed_url: p.signed_url ?? p.thumb_url ?? "",
+      consent_id: p.consent_id,
+      created_at: p.created_at,
+    }));
+  const root_scores = {} as RootScores;
+  for (const s of c.root_scores ?? []) {
+    (root_scores as Record<string, { score: number; label_en: string; label_ne: string }>)[s.root] = {
+      score: s.score, label_en: "", label_ne: "",
+    };
+  }
+  return {
+    id: scanId,
+    status: "submitted",
+    current_stage: "root_map",
+    stages_completed: [],
+    version: c.scan?.version ?? 1,
+    red_flags_count: (c.red_flags ?? []).filter((f) => !f.resolved_at).length,
+    created_at: c.created_at,
+    updated_at: c.created_at,
+    timeline_events: c.timeline_events ?? [],
+    photos,
+    root_scores: Object.keys(root_scores).length ? root_scores : null,
+    red_flags: c.red_flags ?? [],
+  };
+}
+
+/** v14: human labels for the derived Kahani/Jara answers stored on the scan. */
+function answerLabels(t: (key: string) => string): Record<string, string> {
+  return {
+    sleep_hours: t("v14doctor.ansSleep"),
+    itching: t("v14doctor.ansItching"),
+    flaking: t("v14doctor.ansFlaking"),
+    oiliness: t("v14doctor.ansOiliness"),
+    heat_styling: t("v14doctor.ansHeat"),
+    coloring: t("v14doctor.ansColoring"),
+    family_pattern: t("v14doctor.ansFamily"),
+    irregular_periods: t("v14doctor.ansPeriods"),
+    recent_weight_change: t("v14doctor.ansWeight"),
+    derm_note: t("v14doctor.ansDermNote"),
+    thinning_area: t("v14doctor.ansThinning"),
+  };
+}
+
+function formatAnswerValue(t: (key: string) => string, key: string, v: unknown): string {
+  if (v === true) return t("common.yes");
+  if (v === false || v === null || v === undefined || v === "") return "—";
+  if (key === "sleep_hours") return `${String(v)} ${t("v14doctor.hours")}`;
+  if (key === "oiliness") return `Level ${String(v)} / 5`;
+  if (Array.isArray(v)) return v.map(String).join(", ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
 export default function DoctorCase() {
   const { id } = useParams<{ id: string }>();
   const { t, lang } = useLang();
@@ -293,6 +370,27 @@ export default function DoctorCase() {
   // D38: similar past cases.
   const [similar, setSimilar] = useState<B4SimilarCase[] | null>(null);
   const [b4err, setB4err] = useState<string | null>(null);
+  // ---- v14: hardened case-load path ----
+  /** Set when GET /doctor/cases/:id itself fails: distinguishes "case not
+   * found" (404) from network/server errors. Never a dead end. */
+  const [caseErr, setCaseErr] = useState<{ notFound: boolean; detail: string } | null>(null);
+  /** True when the scan view was built from the case payload because the
+   * owner-only /scans/:id fetch failed for the doctor. */
+  const [scanLimited, setScanLimited] = useState(false);
+  /** Bumped by the error-card retry button to reload the case. */
+  const [reloadKey, setReloadKey] = useState(0);
+  /** Claim an unassigned queued case straight from the case page. */
+  const [claimBusy, setClaimBusy] = useState(false);
+  // ---- v14: structured prescription (diagnosis + medicines + instructions) ----
+  const [diagnosis, setDiagnosis] = useState("");
+  const [medicines, setMedicines] = useState([{ name: "", dosage: "", duration: "" }]);
+  const [instructions, setInstructions] = useState([""]);
+  const [rxError, setRxError] = useState<string | null>(null);
+  // ---- v14: follow-up scheduling from the case page ----
+  const [fuDate, setFuDate] = useState("");
+  const [fuNote, setFuNote] = useState("");
+  const [fuBusy, setFuBusy] = useState(false);
+  const [fuList, setFuList] = useState<FollowUp[]>([]);
 
   useEffect(() => {
     shopApi.listKits(true).then((r) => setKits(r.kits)).catch(() => { /* optional */ });
@@ -300,38 +398,65 @@ export default function DoctorCase() {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    setLoading(true);
+    setCaseErr(null);
+    setScanLimited(false);
     (async () => {
+      // Phase 1: the case itself. A failure here is a hard stop — but never
+      // a dead end (the error card below always offers a way back).
+      let c: Case;
       try {
         // Fetch the case directly by id — the old approach (find it in the
         // first page of queued + in_review) broke for reviewed/needs_info
         // cases and for queues longer than one page, showing "Not found."
-        const c = await doctorApi.getCase(id);
-        setTheCase(c);
-        setSlaPausedAt(c.sla_paused_at ?? null);
-        doctorApi.listBookmarks().then((r) => setBookmarked(r.case_ids.includes(c.id))).catch(() => {});
-        doctorApi.listSnippets().then((r) => setMySnippets(r.snippets)).catch(() => {});
-        doctorApi.getChecklist(c.id).then((r) => setChecklist(r.checklist)).catch(() => {});
-        // ---- Batch-4 (010): D31 photo requests, D32 comments, D33 concerns,
-        // D35 priority history, D38 similar cases, D41 Q&A (all optional).
-        doctorB4Api.needsInfo(c.id).then((r) => setPhotoRequests(r.photo_requests)).catch(() => setPhotoRequests([]));
-        doctorB4Api.listComments(c.id).then((r) => setComments(r.comments)).catch(() => {});
-        doctorB4Api.listConcerns(c.id).then((r) => { setConcerns(r.concerns); setAllowedTags(r.allowed_tags); }).catch(() => {});
-        doctorB4Api.priorityHistory(c.id).then((r) => setPriHistory(r.history)).catch(() => setPriHistory([]));
-        doctorB4Api.similarCases(c.id).then((r) => setSimilar(r.similar)).catch(() => setSimilar([]));
-        doctorB4Api.listMessages(c.id).then((r) => setMessages(r.messages)).catch(() => {});
-        // D3/D5: the patient's other cases feed the timeline + score trend.
-        doctorApi
-          .patientCases(c.user_id)
-          .then((r) => setTimeline(r.cases))
-          .catch(() => setTimeline([]));
-        setScan(await doctorApi.getCaseScan(c.scan_id));
-        setLoading(false);
+        c = await doctorApi.getCase(id);
       } catch (e) {
-        setError(apiErrorMessage(t, e));
+        if (cancelled) return;
+        setCaseErr({
+          notFound: e instanceof ApiError && e.status === 404,
+          detail: apiErrorMessage(t, e),
+        });
         setLoading(false);
+        return;
       }
+      if (cancelled) return;
+      setTheCase(c);
+      setSlaPausedAt(c.sla_paused_at ?? null);
+      doctorApi.listBookmarks().then((r) => { if (!cancelled) setBookmarked(r.case_ids.includes(c.id)); }).catch(() => {});
+      doctorApi.listSnippets().then((r) => { if (!cancelled) setMySnippets(r.snippets); }).catch(() => {});
+      doctorApi.getChecklist(c.id).then((r) => { if (!cancelled) setChecklist(r.checklist); }).catch(() => {});
+      // v14: follow-ups scheduled for this case (the endpoint returns the
+      // doctor's own pending follow-ups; filter client-side).
+      doctorApi.listFollowUps().then((r) => { if (!cancelled) setFuList(r.follow_ups.filter((f) => f.case_id === c.id)); }).catch(() => {});
+      // ---- Batch-4 (010): D31 photo requests, D32 comments, D33 concerns,
+      // D35 priority history, D38 similar cases, D41 Q&A (all optional).
+      doctorB4Api.needsInfo(c.id).then((r) => { if (!cancelled) setPhotoRequests(r.photo_requests); }).catch(() => { if (!cancelled) setPhotoRequests([]); });
+      doctorB4Api.listComments(c.id).then((r) => { if (!cancelled) setComments(r.comments); }).catch(() => {});
+      doctorB4Api.listConcerns(c.id).then((r) => { if (!cancelled) { setConcerns(r.concerns); setAllowedTags(r.allowed_tags); } }).catch(() => {});
+      doctorB4Api.priorityHistory(c.id).then((r) => { if (!cancelled) setPriHistory(r.history); }).catch(() => { if (!cancelled) setPriHistory([]); });
+      doctorB4Api.similarCases(c.id).then((r) => { if (!cancelled) setSimilar(r.similar); }).catch(() => { if (!cancelled) setSimilar([]); });
+      doctorB4Api.listMessages(c.id).then((r) => { if (!cancelled) setMessages(r.messages); }).catch(() => {});
+      // D3/D5: the patient's other cases feed the timeline + score trend.
+      doctorApi
+        .patientCases(c.user_id)
+        .then((r) => { if (!cancelled) setTimeline(r.cases); })
+        .catch(() => { if (!cancelled) setTimeline([]); });
+      // Phase 2: the scan view. /scans/:id is owner-only and 404s for
+      // doctors — fall back to the case payload (photos carry signed URLs
+      // since the v14 server change) instead of a "Not found." dead end.
+      try {
+        const s = await doctorApi.getCaseScan(c.scan_id);
+        if (!cancelled) setScan(s);
+      } catch {
+        if (cancelled) return;
+        setScan(scanFromCasePayload(c as CaseDetailPayload, c.scan_id));
+        setScanLimited(true);
+      }
+      if (!cancelled) setLoading(false);
     })();
-  }, [id, t]);
+    return () => { cancelled = true; };
+  }, [id, t, reloadKey]);
 
   const unresolved: RedFlag[] = useMemo(
     () => scan?.red_flags.filter((f) => !f.resolved_at) ?? [],
@@ -549,6 +674,52 @@ export default function DoctorCase() {
     }
   }
 
+  // ---- v14: claim + follow-ups from the case page ----
+  /** Claim an unassigned queued case without going back to the queue. */
+  async function claimThisCase() {
+    if (!theCase || claimBusy) return;
+    setClaimBusy(true);
+    try {
+      const c = await doctorApi.claimCase(theCase.id);
+      setTheCase({ ...theCase, assigned_doctor_id: c.assigned_doctor_id, status: c.status } as Case);
+      toast(t("doctor.claimedToast"));
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    } finally {
+      setClaimBusy(false);
+    }
+  }
+  /** Schedule the next meeting / follow-up for this case. */
+  async function scheduleFollowUp() {
+    if (!theCase || !fuDate || fuBusy) return;
+    setFuBusy(true);
+    try {
+      const f = await doctorApi.createFollowUp({
+        case_id: theCase.id,
+        due_on: fuDate,
+        note: fuNote.trim() || undefined,
+      });
+      setFuList((v) => [...v, f].sort((a, b) => a.due_on.localeCompare(b.due_on)));
+      setFuDate("");
+      setFuNote("");
+      toast(t("p12.doctor.followupSaved"));
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    } finally {
+      setFuBusy(false);
+    }
+  }
+  /** Mark one of this case's follow-ups done. */
+  async function completeFollowUpItem(followUpId: string) {
+    try {
+      await doctorApi.completeFollowUp(followUpId);
+      setFuList((v) => v.filter((f) => f.id !== followUpId));
+      toast(t("p12.doctor.followupDone"));
+    } catch (e) {
+      setError(apiErrorMessage(t, e));
+    }
+  }
+
   function insertTemplate(key: (typeof NOTE_TEMPLATES)[number]) {
     const text = t(`doctor.${key}Text`);
     setReviewNotes((v) => (v.trim() ? `${v.trimEnd()}\n\n${text}` : text));
@@ -570,11 +741,40 @@ export default function DoctorCase() {
       }
       flagNotes[fid] = note;
     }
-    const valid = items.filter((i) => i.title.trim());
+    // v14: validate the structured prescription — a touched medicine row
+    // (dosage/duration filled) must have a name, or be removed.
+    setRxError(null);
+    const touchedNameless = medicines.some(
+      (m) => !m.name.trim() && (m.dosage.trim() || m.duration.trim()),
+    );
+    if (touchedNameless) {
+      setRxError(t("v14doctor.medicineNeedsName"));
+      return;
+    }
+    // v14: serialize the structured prescription into plan items the patient
+    // can already see — medicines as product items (name + dosage/duration
+    // in the detail line), instructions as habit items, diagnosis prefixed
+    // into the dermatologist's notes.
+    const rxItems: ComposerItem[] = [];
+    for (const m of medicines) {
+      const name = m.name.trim();
+      if (!name) continue;
+      const parts: string[] = [];
+      if (m.dosage.trim()) parts.push(`Dosage: ${m.dosage.trim()}`);
+      if (m.duration.trim()) parts.push(`Duration: ${m.duration.trim()}`);
+      rxItems.push({ kind: "product", title: name, detail: parts.join(" · ") });
+    }
+    for (const s of instructions) {
+      if (s.trim()) rxItems.push({ kind: "habit", title: s.trim(), detail: "" });
+    }
+    const valid = [...rxItems, ...items.filter((i) => i.title.trim())];
     if (!valid.length) {
       setError(t("doctor.planActionPh"));
       return;
     }
+    const notesParts: string[] = [];
+    if (diagnosis.trim()) notesParts.push(`Diagnosis: ${diagnosis.trim()}`);
+    if (reviewNotes.trim()) notesParts.push(reviewNotes.trim());
     setBusy(true);
     setError(null);
     try {
@@ -587,7 +787,7 @@ export default function DoctorCase() {
           kit_id: i.kit_id || undefined,
           sort_order: n,
         })),
-        review_notes: reviewNotes.trim() || undefined,
+        review_notes: notesParts.length ? notesParts.join("\n\n") : undefined,
         rescan_due_on: rescanDue || undefined,
         resolved_flag_ids: resolveIds.length ? resolveIds : undefined,
         resolved_flag_notes: resolveIds.length ? flagNotes : undefined,
@@ -595,6 +795,12 @@ export default function DoctorCase() {
       toast(t("doctor.planSaved"));
       await doctorApi.approvePlan(plan.id);
       setApproved(true);
+      // v14: refresh the case so the status chip flips to Reviewed and the
+      // case shows up under the dashboard's Reviewed tab immediately.
+      try {
+        const c2 = await doctorApi.getCase(id);
+        setTheCase((prev) => (prev ? { ...prev, status: c2.status, assigned_doctor_id: c2.assigned_doctor_id } : prev));
+      } catch { /* status chip keeps its old value; the queue refetch covers it */ }
       toast(t("doctor.approvedNote"));
     } catch (e) {
       setError(apiErrorMessage(t, e));
@@ -604,7 +810,51 @@ export default function DoctorCase() {
   }
 
   if (loading) return <Loading />;
-  if (!scan || !theCase) return <ErrorCard message={error ?? t("errors.not_found")} />;
+  // v14: hardened "Not found" path — the card distinguishes a missing case
+  // (404) from network/server errors, offers a retry for the latter, and
+  // always links back to the review queue. Never a dead end.
+  if (caseErr) {
+    return (
+      <div className="screen">
+        <h1>{t("doctor.queueTitle")}</h1>
+        <ErrorCard
+          message={caseErr.detail}
+          onRetry={caseErr.notFound ? undefined : () => setReloadKey((k) => k + 1)}
+        />
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>
+            {caseErr.notFound ? t("v14doctor.caseNotFound") : t("v14doctor.caseLoadError")}
+          </h3>
+          <p className="tiny muted">
+            {caseErr.notFound
+              ? t("v14doctor.caseNotFoundBody")
+              : t("v14doctor.caseLoadErrorBody")}
+          </p>
+          <Link className="btn btn-p" to="/doctor" style={{ textDecoration: "none", textAlign: "center" }}>
+            ← {t("doctor.backToQueue")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  if (!scan || !theCase) {
+    return (
+      <div className="screen">
+        <h1>{t("doctor.queueTitle")}</h1>
+        <ErrorCard message={error ?? t("errors.not_found")} />
+        <Link className="btn btn-p" to="/doctor" style={{ textDecoration: "none", textAlign: "center" }}>
+          ← {t("doctor.backToQueue")}
+        </Link>
+      </div>
+    );
+  }
+
+  // v14: the patient's Kahani/Jara answers ride on the case payload
+  // (GET /doctor/cases/:id → scan.answers).
+  const scanAnswers = (theCase as CaseDetailPayload).scan?.answers ?? null;
+  const answerEntries = scanAnswers
+    ? Object.entries(scanAnswers).filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== "__skip__")
+    : [];
 
   return (
     <div className="screen">
@@ -612,6 +862,12 @@ export default function DoctorCase() {
       {error && <ErrorCard message={error} />}
       {approved && (
         <NoticeBox tone="ok" title={t("doctor.approvedNote")}><p>{t("doctor.stReviewed")}</p></NoticeBox>
+      )}
+      {/* v14: shown when the scan view was rebuilt from the case payload */}
+      {scanLimited && (
+        <NoticeBox tone="notice" title={t("v14doctor.limitedView")}>
+          <p>{t("v14doctor.limitedViewBody")}</p>
+        </NoticeBox>
       )}
 
       <div className="card">
@@ -639,7 +895,18 @@ export default function DoctorCase() {
         <p className="tiny muted">{t("doctor.auditNote")}</p>
         {/* Batch-3 (009): D20 archive, D22 second opinion, D26 transfer, D27 print */}
         <div className="rowflex" style={{ flexWrap: "wrap", rowGap: 6 }}>
-          {(theCase as { archived_at?: string | null }).archived_at ? (
+          {/* v14: claim an unassigned queued case straight from the case page */}
+        {theCase.status === "queued" && !theCase.assigned_doctor_id && (
+          <button
+            className="btn btn-p btn-s"
+            style={{ width: "auto", margin: 0 }}
+            disabled={claimBusy}
+            onClick={claimThisCase}
+          >
+            {claimBusy ? t("common.loading") : t("doctor.claim")}
+          </button>
+        )}
+        {(theCase as { archived_at?: string | null }).archived_at ? (
             <Chip tone="grey">{t("p12c.doctor.archivedBadge")}</Chip>
           ) : (
             <button className="btn btn-s" style={{ width: "auto", margin: 0 }} onClick={() => setArchiveConfirm(true)}>
@@ -854,6 +1121,18 @@ export default function DoctorCase() {
         {scan.timeline_events.length === 0 && <p className="tiny muted">—</p>}
       </div>
 
+      {/* v14: the customer's Kahani/Jara answers, from the case payload */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>{t("doctor.answersTitle")}</h3>
+        {answerEntries.length === 0 && <p className="tiny muted">—</p>}
+        {answerEntries.map(([key, value]) => (
+          <div className="rowflex" key={key} style={{ margin: "6px 0", alignItems: "flex-start" }}>
+            <span className="tiny" style={{ flex: "0 0 45%" }}>{answerLabels(t)[key] ?? key}</span>
+            <b className="tiny" style={{ flex: 1, textAlign: "right" }}>{formatAnswerValue(t, key, value)}</b>
+          </div>
+        ))}
+      </div>
+
       {b2err ? <ErrorCard message={b2err} /> : null}
 
       {/* D14: review checklist */}
@@ -1044,6 +1323,168 @@ export default function DoctorCase() {
         ))}
       </div>
 
+      {/* v14: structured prescription — diagnosis, medicines, instructions.
+          Serialized into plan items on submit (medicines → product items
+          with dosage/duration, instructions → habit items, diagnosis → the
+          dermatologist's notes) so the patient sees everything. */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>{t("v14doctor.prescription")}</h3>
+        <p className="tiny muted">
+          {t("v14doctor.prescriptionSub")}
+        </p>
+        {rxError ? <ErrorCard message={rxError} /> : null}
+        <label className="fl" htmlFor="rx-diagnosis">{t("v14doctor.diagnosis")}</label>
+        <input
+          id="rx-diagnosis"
+          type="text"
+          placeholder={t("v14doctor.diagnosisPh")}
+          value={diagnosis}
+          onChange={(e) => setDiagnosis(e.target.value)}
+          maxLength={500}
+        />
+        <h4 style={{ margin: "14px 0 4px" }}>{t("v14doctor.medicines")}</h4>
+        {medicines.map((m, n) => (
+          <div key={n} style={{ margin: "10px 0", padding: 10, border: "1px solid var(--line)", borderRadius: 10 }}>
+            <div className="rowflex">
+              <b className="tiny">{t("v14doctor.medicineN", { n: n + 1 })}</b>
+              <span className="spacer" />
+              {medicines.length > 1 && (
+                <button
+                  type="button"
+                  className="linklike"
+                  style={{ color: "var(--bad)" }}
+                  onClick={() => setMedicines((v) => v.filter((_, i) => i !== n))}
+                  aria-label={t("v14doctor.removeMedicineN", { n: n + 1 })}
+                >
+                  <Icon.cross size={16} />
+                </button>
+              )}
+            </div>
+            <label className="fl" htmlFor={`rx-med-name-${n}`}>{t("v14doctor.medicineName")}</label>
+            <input
+              id={`rx-med-name-${n}`}
+              type="text"
+              placeholder={t("v14doctor.medicineName")}
+              value={m.name}
+              onChange={(e) => setMedicines((v) => v.map((x, i) => (i === n ? { ...x, name: e.target.value } : x)))}
+              maxLength={200}
+            />
+            <div className="rowflex" style={{ alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <label className="fl" htmlFor={`rx-med-dose-${n}`}>{t("v14doctor.dosage")}</label>
+                <input
+                  id={`rx-med-dose-${n}`}
+                  type="text"
+                  placeholder={t("v14doctor.dosagePh")}
+                  value={m.dosage}
+                  onChange={(e) => setMedicines((v) => v.map((x, i) => (i === n ? { ...x, dosage: e.target.value } : x)))}
+                  maxLength={200}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label className="fl" htmlFor={`rx-med-dur-${n}`}>{t("v14doctor.duration")}</label>
+                <input
+                  id={`rx-med-dur-${n}`}
+                  type="text"
+                  placeholder={t("v14doctor.durationPh")}
+                  value={m.duration}
+                  onChange={(e) => setMedicines((v) => v.map((x, i) => (i === n ? { ...x, duration: e.target.value } : x)))}
+                  maxLength={200}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn btn-g"
+          onClick={() => setMedicines((v) => [...v, { name: "", dosage: "", duration: "" }])}
+        >
+          + {t("v14doctor.addMedicine")}
+        </button>
+        <h4 style={{ margin: "14px 0 4px" }}>{t("v14doctor.instructions")}</h4>
+        {instructions.map((s, n) => (
+          <div className="rowflex" key={n} style={{ margin: "6px 0" }}>
+            <input
+              type="text"
+              placeholder={t("v14doctor.instructionPh")}
+              value={s}
+              onChange={(e) => setInstructions((v) => v.map((x, i) => (i === n ? e.target.value : x)))}
+              aria-label={t("v14doctor.instructionN", { n: n + 1 })}
+              maxLength={500}
+            />
+            {instructions.length > 1 && (
+              <button
+                type="button"
+                className="linklike"
+                style={{ color: "var(--bad)", flexShrink: 0 }}
+                onClick={() => setInstructions((v) => v.filter((_, i) => i !== n))}
+                aria-label={t("v14doctor.removeInstructionN", { n: n + 1 })}
+              >
+                <Icon.cross size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn btn-g"
+          onClick={() => setInstructions((v) => [...v, ""])}
+        >
+          + {t("v14doctor.addInstruction")}
+        </button>
+      </div>
+
+      {/* v14: schedule the next meeting / follow-up from the case page */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>{t("p12.doctor.followups")}</h3>
+        {fuList.length === 0 && <p className="tiny muted">{t("p12.doctor.noFollowups")}</p>}
+        {fuList.map((f) => (
+          <div key={f.id} className="rowflex" style={{ margin: "8px 0", alignItems: "center" }}>
+            <span className="tiny">
+              <b>{f.due_on}</b>
+              {f.note ? ` — ${f.note}` : ""}
+            </span>
+            <span className="spacer" />
+            <button
+              type="button"
+              className="btn btn-s"
+              style={{ width: "auto", margin: 0 }}
+              onClick={() => completeFollowUpItem(f.id)}
+            >
+              {t("p12.doctor.markDone")}
+            </button>
+          </div>
+        ))}
+        <div className="rowflex" style={{ marginTop: 8, alignItems: "flex-start" }}>
+          <input
+            type="date"
+            value={fuDate}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setFuDate(e.target.value)}
+            aria-label={t("p12.doctor.dueOn")}
+            style={{ width: "auto" }}
+          />
+          <input
+            type="text"
+            value={fuNote}
+            onChange={(e) => setFuNote(e.target.value)}
+            placeholder={t("p12.doctor.notePh")}
+            aria-label={t("p12.doctor.notePh")}
+            maxLength={500}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn btn-g"
+          disabled={fuBusy || !fuDate}
+          onClick={scheduleFollowUp}
+          style={{ marginTop: 8 }}
+        >
+          {fuBusy ? t("common.loading") : t("p12.doctor.schedule")}
+        </button>
+      </div>
+
       <div className="card">
         <h3 style={{ marginTop: 0 }}>{t("doctor.composerTitle")}</h3>
         {items.map((item, n) => (
@@ -1073,6 +1514,15 @@ export default function DoctorCase() {
               onChange={(e) => setItems((v) => v.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)))}
               aria-label={t("doctor.planActionPh")}
             />
+            {/* v14: the composer always carried a `detail` field — now it has an input */}
+            <input
+              type="text"
+              placeholder={t("v14doctor.detailsOptional")}
+              value={item.detail}
+              onChange={(e) => setItems((v) => v.map((x, i) => (i === n ? { ...x, detail: e.target.value } : x)))}
+              aria-label={t("v14doctor.detailsOptional")}
+              maxLength={1000}
+            />
             {item.kind === "product" && (
               <>
                 <label className="fl" htmlFor={`kit-${n}`}>{t("doctor.attachKit")}</label>
@@ -1088,6 +1538,13 @@ export default function DoctorCase() {
                     </option>
                   ))}
                 </select>
+                {/* v14: the attached kit persists via the plan (kit_id on the
+                    plan item) and shows on the patient's plan as a prescribed kit */}
+                {item.kit_id && kits.some((k) => k.id === item.kit_id) && (
+                  <p className="tiny" style={{ margin: "4px 0 0", color: "var(--ok)" }}>
+                    ✓ {t("v14doctor.kitAttached", { name: kits.find((k) => k.id === item.kit_id)?.name ?? "" })}
+                  </p>
+                )}
                 <p className="tiny muted" style={{ margin: "4px 0 0" }}>{t("doctor.attachKitHint")}</p>
               </>
             )}

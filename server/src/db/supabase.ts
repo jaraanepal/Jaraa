@@ -12,6 +12,7 @@ import type {
   Challenge,
   ChallengeAssignment,
   CoachAvailability,
+  CoachAssignment, CoachFollowup,
   CoachMessage,
   CoachThread,
   CoinLedgerEntry,
@@ -2459,6 +2460,80 @@ async setCoachAvailability(coachId: string, status: "available" | "on_leave", no
     .select().single();
   if (error) throw error;
   return data;
+}
+
+async assignCustomerToCoach(coachId: string, customerId: string) {
+  const { data, error } = await this.sb.from("coach_assignments")
+    .upsert({ coach_id: coachId, customer_id: customerId }, { onConflict: "customer_id" })
+    .select().single();
+  if (error) throw error;
+  return data as CoachAssignment;
+}
+
+async unassignCustomer(customerId: string) {
+  const { error } = await this.sb.from("coach_assignments").delete().eq("customer_id", customerId);
+  if (error) throw error;
+}
+
+async listCoachAssignments(coachId: string) {
+  const { data, error } = await this.sb.from("coach_assignments").select("*").eq("coach_id", coachId);
+  if (error) throw error;
+  return (data ?? []) as CoachAssignment[];
+}
+
+async listAllCoachAssignments() {
+  const { data, error } = await this.sb.from("coach_assignments").select("*");
+  if (error) throw error;
+  return (data ?? []) as CoachAssignment[];
+}
+
+async getCoachAssignmentForCustomer(customerId: string) {
+  const { data, error } = await this.sb.from("coach_assignments").select("*").eq("customer_id", customerId).maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as CoachAssignment | null;
+}
+
+async createCoachFollowup(f: { customer_id: string; coach_id: string; scheduled_for: string; note: string }) {
+  const { data, error } = await this.sb.from("coach_followups")
+    .insert({ customer_id: f.customer_id, coach_id: f.coach_id, scheduled_for: f.scheduled_for, note: f.note })
+    .select().single();
+  if (error) throw error;
+  return data as CoachFollowup;
+}
+
+async listCoachFollowups(customerId: string) {
+  const { data, error } = await this.sb.from("coach_followups")
+    .select("*").eq("customer_id", customerId).order("scheduled_for", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CoachFollowup[];
+}
+
+async listCoachFollowupsForCoach(coachId: string, status?: "pending" | "completed" | "cancelled") {
+  let q = this.sb.from("coach_followups").select("*").eq("coach_id", coachId);
+  if (status) q = q.eq("status", status);
+  const { data, error } = await q.order("scheduled_for", { ascending: true });
+  if (error) throw error;
+  const rows = (data ?? []) as CoachFollowup[];
+  const names = new Map<string, string | null>();
+  for (const r of rows) {
+    if (!names.has(r.customer_id)) {
+      const { data: prof } = await this.sb.from("profiles").select("name").eq("user_id", r.customer_id).maybeSingle();
+      names.set(r.customer_id, (prof?.name as string) ?? null);
+    }
+  }
+  return rows.map((r) => ({ ...r, customer_name: names.get(r.customer_id) ?? null }));
+}
+
+async completeCoachFollowup(id: string, coachId: string | null) {
+  const { data: existing, error: getErr } = await this.sb.from("coach_followups").select("*").eq("id", id).maybeSingle();
+  if (getErr) throw getErr;
+  if (!existing || (coachId !== null && (existing as CoachFollowup).coach_id !== coachId)) return null;
+  if ((existing as CoachFollowup).status !== "pending") return existing as CoachFollowup;
+  const { data, error } = await this.sb.from("coach_followups")
+    .update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", id)
+    .select().single();
+  if (error) throw error;
+  return data as CoachFollowup;
 }
 
 async adherenceDetail(userId: string) {

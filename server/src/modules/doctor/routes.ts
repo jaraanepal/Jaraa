@@ -72,7 +72,7 @@ function toContractPlan(plan: Plan) {
 
 export function doctorRoutes(deps: Deps): Router {
   const r = Router();
-  const { store } = deps;
+  const { store, storage } = deps;
   r.use(requireRole("doctor", "admin"));
 
   async function caseUserId(kase: Case): Promise<string | null> {
@@ -472,12 +472,24 @@ export function doctorRoutes(deps: Deps): Router {
       store.getRootScores(kase.scan_id),
       store.listRedFlags(kase.scan_id),
     ]);
+    // v14: sign the photo URLs inline. GET /scans/:id is owner-only and 404s
+    // for doctors, so the case payload must be self-sufficient for the
+    // doctor case page (photos, answers, timeline, scores, flags).
+    const photosOut = await Promise.all(photos.map(async (p) => {
+      let thumb_url: string | null = null;
+      let signed_url: string | null = null;
+      try { thumb_url = p.thumb_path ? await storage.getSignedUrl(p.thumb_path, 900) : null; }
+      catch { thumb_url = null; }
+      try { signed_url = await storage.getSignedUrl(p.storage_path, 900); }
+      catch { signed_url = null; }
+      return { ...p, thumb_url, signed_url };
+    }));
     res.json({
       ...toContractCase(kase, scan?.user_id ?? null),
       // D30: the SLA clock state (010 migration column; absent on old rows).
       sla_paused_at: (kase as unknown as { sla_paused_at?: string | null }).sla_paused_at ?? null,
       scan: scan ? { id: scan.id, status: scan.status, answers: scan.answers, version: scan.version } : null,
-      timeline_events: events, photos, root_scores: scores, red_flags: flags,
+      timeline_events: events, photos: photosOut, root_scores: scores, red_flags: flags,
     });
   }));
 

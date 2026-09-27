@@ -11,6 +11,7 @@ import type {
   AppFeedback, KitReminder, KitUsage,
   ChallengeGroup, Badge, SessionSummary, CustomerGoal, HabitTemplate, NoteTemplate,
   CoachAvailability,
+  CoachAssignment, CoachFollowup,
   CoachNote, Escalation, EscalationStatus, ScheduledNudge, SatisfactionRating, WishlistItem,
   CoachFeedback, StreakFreeze, CustomerTag, CoachHandover, CoachTip, ChallengeSurvey, JourneyStage,
   CommunityTip,
@@ -159,6 +160,8 @@ export class MemoryStore implements Store {
   packagingMaterials = new Map<string, PackagingMaterial>();
   quarantine = new Map<string, QuarantineEntry>();
   coachAvailability = new Map<string, CoachAvailability>();
+  coachAssignments = new Map<string, CoachAssignment>();
+  coachFollowups = new Map<string, CoachFollowup>();
   onboardingChecklists = new Map<string, OnboardingChecklist>();
   caseMessages = new Map<string, CaseMessage>();
   loyaltyEntries = new Map<string, LoyaltyEntry>();
@@ -2103,6 +2106,71 @@ async setCoachAvailability(coachId: string, status: "available" | "on_leave", no
   };
   this.coachAvailability.set(coachId, row);
   return row;
+}
+
+async assignCustomerToCoach(coachId: string, customerId: string): Promise<CoachAssignment> {
+  const existing = this.coachAssignments.get(customerId);
+  const row: CoachAssignment = {
+    id: existing?.id ?? randomUUID(),
+    coach_id: coachId,
+    customer_id: customerId,
+    assigned_at: existing?.assigned_at ?? now(),
+  };
+  this.coachAssignments.set(customerId, row);
+  return row;
+}
+
+async unassignCustomer(customerId: string): Promise<void> {
+  this.coachAssignments.delete(customerId);
+}
+
+async listCoachAssignments(coachId: string): Promise<CoachAssignment[]> {
+  return [...this.coachAssignments.values()].filter((a) => a.coach_id === coachId);
+}
+
+async listAllCoachAssignments(): Promise<CoachAssignment[]> {
+  return [...this.coachAssignments.values()];
+}
+
+async getCoachAssignmentForCustomer(customerId: string): Promise<CoachAssignment | null> {
+  return this.coachAssignments.get(customerId) ?? null;
+}
+
+async createCoachFollowup(f: { customer_id: string; coach_id: string; scheduled_for: string; note: string }): Promise<CoachFollowup> {
+  const row: CoachFollowup = {
+    id: randomUUID(),
+    customer_id: f.customer_id,
+    coach_id: f.coach_id,
+    scheduled_for: f.scheduled_for,
+    note: f.note,
+    status: "pending",
+    completed_at: null,
+    created_at: now(),
+  };
+  this.coachFollowups.set(row.id, row);
+  return row;
+}
+
+async listCoachFollowups(customerId: string): Promise<CoachFollowup[]> {
+  return [...this.coachFollowups.values()]
+    .filter((f) => f.customer_id === customerId)
+    .sort((a, b) => b.scheduled_for.localeCompare(a.scheduled_for));
+}
+
+async listCoachFollowupsForCoach(coachId: string, status?: "pending" | "completed" | "cancelled"): Promise<(CoachFollowup & { customer_name: string | null })[]> {
+  return [...this.coachFollowups.values()]
+    .filter((f) => f.coach_id === coachId && (!status || f.status === status))
+    .sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for))
+    .map((f) => ({ ...f, customer_name: this.profiles.get(f.customer_id)?.name ?? null }));
+}
+
+async completeCoachFollowup(id: string, coachId: string | null): Promise<CoachFollowup | null> {
+  const f = this.coachFollowups.get(id);
+  if (!f || (coachId !== null && f.coach_id !== coachId)) return null;
+  if (f.status !== "pending") return f;
+  f.status = "completed";
+  f.completed_at = now();
+  return f;
 }
 
 async adherenceDetail(userId: string): Promise<{ habit: string; done: number; total: number }[]> {

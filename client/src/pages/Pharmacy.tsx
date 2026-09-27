@@ -1695,7 +1695,12 @@ function OrderB4Tools({ order, onUpdate }: { order: Order; onUpdate: (o: Order) 
   );
 }
 
-export default function Pharmacy() {
+/** v14 Problem 2: tab key used by the per-tool-area section pages for deep-linking. */
+export type PharmacyTabKey =
+  | "queue" | "stock" | "manifest" | "expiry" | "claims" | "holidays" | "reports"
+  | "insights" | "quarantine" | "shift" | "couriers" | "returns" | "packaging" | "cod";
+
+export default function Pharmacy({ initialTab = "queue" }: { initialTab?: PharmacyTabKey }) {
   const { t } = useLang();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1708,10 +1713,7 @@ export default function Pharmacy() {
   const [kitNames, setKitNames] = useState<Record<string, string>>({});
   // Batch-1: Queue | Stock | Insights tabs. Batch-3 adds: Quarantine | Shift |
   // Couriers | Returns | Packaging | COD.
-  const [tab, setTab] = useState<
-    "queue" | "stock" | "insights" | "quarantine" | "shift" | "couriers" | "returns" | "packaging" | "cod"
-    | "manifest" | "expiry" | "claims" | "holidays" | "reports"
-  >("queue");
+  const [tab, setTab] = useState<PharmacyTabKey>(initialTab);
 
   const onOrderUpdate = (updated: Order) =>
     setOrders((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));

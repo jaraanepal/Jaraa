@@ -29,8 +29,6 @@ const Teleconsult = lazy(() => import("./pages/Teleconsult"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const DoctorDashboard = lazy(() => import("./pages/doctor/DoctorDashboard"));
 const DoctorCase = lazy(() => import("./pages/doctor/DoctorCase"));
-const DoctorFollowups = lazy(() => import("./pages/doctor/DoctorFollowups"));
-const DoctorAvailability = lazy(() => import("./pages/doctor/DoctorAvailability"));
 const DoctorTools = lazy(() => import("./pages/doctor/DoctorTools"));
 const AdminTools = lazy(() => import("./pages/admin/AdminTools"));
 const PharmacyTools = lazy(() => import("./pages/pharmacy/PharmacyTools"));
@@ -55,6 +53,25 @@ const AdminCases = lazy(() => import("./pages/admin/AdminCases"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy"));
 const Coach = lazy(() => import("./pages/Coach"));
 const CoachFollowups = lazy(() => import("./pages/Coach").then((m) => ({ default: m.CoachFollowups })));
+/* v14: pharmacy section pages (Problem 2) + coach customer workflow (Problem 4) */
+const lazySection = (name: keyof typeof import("./pages/pharmacy/sections")) =>
+  lazy(() => import("./pages/pharmacy/sections").then((m) => ({ default: m[name] })));
+const PharmacyQueuePage = lazySection("PharmacyQueuePage");
+const PharmacyStockPage = lazySection("PharmacyStockPage");
+const PharmacyManifestPage = lazySection("PharmacyManifestPage");
+const PharmacyExpiryPage = lazySection("PharmacyExpiryPage");
+const PharmacyClaimsPage = lazySection("PharmacyClaimsPage");
+const PharmacyHolidaysPage = lazySection("PharmacyHolidaysPage");
+const PharmacyReportsPage = lazySection("PharmacyReportsPage");
+const PharmacyPerformancePage = lazySection("PharmacyPerformancePage");
+const PharmacyQuarantinePage = lazySection("PharmacyQuarantinePage");
+const PharmacyShiftPage = lazySection("PharmacyShiftPage");
+const PharmacyCouriersPage = lazySection("PharmacyCouriersPage");
+const PharmacyReturnsPage = lazySection("PharmacyReturnsPage");
+const PharmacyPackagingPage = lazySection("PharmacyPackagingPage");
+const PharmacyCodPage = lazySection("PharmacyCodPage");
+const CoachCustomers = lazy(() => import("./pages/coach/CoachCustomers"));
+const CoachCustomerDetail = lazy(() => import("./pages/coach/CoachCustomerDetail"));
 /* P-12 customer feature pages */
 const Habits = lazy(() => import("./pages/Habits"));
 const Referral = lazy(() => import("./pages/Referral"));
@@ -139,10 +156,17 @@ export default function App() {
                   {/* Role consoles */}
                   <Route path="/doctor" element={<Guard><DoctorDashboard /></Guard>} />
                   <Route path="/doctor/reviewed" element={<Guard><DoctorDashboard initialTab="reviewed" /></Guard>} />
+                  <Route path="/doctor/patients" element={<Guard><DoctorDashboard initialTab="patients" /></Guard>} />
+                  <Route path="/doctor/followups" element={<Guard><DoctorDashboard initialTab="followups" /></Guard>} />
+                  <Route path="/doctor/availability" element={<Guard><DoctorDashboard initialTab="availability" /></Guard>} />
+                  <Route path="/doctor/activity" element={<Guard><DoctorDashboard initialTab="activity" /></Guard>} />
+                  <Route path="/doctor/archived" element={<Guard><DoctorDashboard initialTab="archived" /></Guard>} />
+                  <Route path="/doctor/second-opinions" element={<Guard><DoctorDashboard initialTab="secondops" /></Guard>} />
+                  <Route path="/doctor/calendar" element={<Guard><DoctorDashboard initialTab="calendar" /></Guard>} />
+                  <Route path="/doctor/triage-presets" element={<Guard><DoctorDashboard initialTab="presets" /></Guard>} />
+                  <Route path="/doctor/digest" element={<Guard><DoctorDashboard initialTab="digest" /></Guard>} />
                   <Route path="/doctor/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/doctor/case/:id" element={<Guard><DoctorCase /></Guard>} />
-                  <Route path="/doctor/followups" element={<Guard><DoctorFollowups /></Guard>} />
-                  <Route path="/doctor/availability" element={<Guard><DoctorAvailability /></Guard>} />
                   <Route path="/doctor/tools" element={<Guard><DoctorTools /></Guard>} />
                   <Route path="/admin" element={<Guard><Admin /></Guard>} />
                   <Route path="/admin/kits" element={<Guard><AdminKits /></Guard>} />
@@ -164,9 +188,27 @@ export default function App() {
                   <Route path="/admin/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/admin/tools" element={<Guard><AdminTools /></Guard>} />
                   <Route path="/pharmacy" element={<Guard><Pharmacy /></Guard>} />
+                  {/* v14: one sidebar page per pharmacy tool area (Problem 2) */}
+                  <Route path="/pharmacy/queue" element={<Guard><PharmacyQueuePage /></Guard>} />
+                  <Route path="/pharmacy/stock" element={<Guard><PharmacyStockPage /></Guard>} />
+                  <Route path="/pharmacy/manifest" element={<Guard><PharmacyManifestPage /></Guard>} />
+                  <Route path="/pharmacy/expiry" element={<Guard><PharmacyExpiryPage /></Guard>} />
+                  <Route path="/pharmacy/claims" element={<Guard><PharmacyClaimsPage /></Guard>} />
+                  <Route path="/pharmacy/holidays" element={<Guard><PharmacyHolidaysPage /></Guard>} />
+                  <Route path="/pharmacy/reports" element={<Guard><PharmacyReportsPage /></Guard>} />
+                  <Route path="/pharmacy/performance" element={<Guard><PharmacyPerformancePage /></Guard>} />
+                  <Route path="/pharmacy/quarantine" element={<Guard><PharmacyQuarantinePage /></Guard>} />
+                  <Route path="/pharmacy/shift" element={<Guard><PharmacyShiftPage /></Guard>} />
+                  <Route path="/pharmacy/couriers" element={<Guard><PharmacyCouriersPage /></Guard>} />
+                  <Route path="/pharmacy/returns" element={<Guard><PharmacyReturnsPage /></Guard>} />
+                  <Route path="/pharmacy/packaging" element={<Guard><PharmacyPackagingPage /></Guard>} />
+                  <Route path="/pharmacy/cod" element={<Guard><PharmacyCodPage /></Guard>} />
                   <Route path="/pharmacy/tools" element={<Guard><PharmacyTools /></Guard>} />
                   <Route path="/pharmacy/profile" element={<Guard><StaffProfile /></Guard>} />
                   <Route path="/coach" element={<Guard><Coach /></Guard>} />
+                  {/* v14: coach customer workflow (Problem 4) */}
+                  <Route path="/coach/customers" element={<Guard><CoachCustomers /></Guard>} />
+                  <Route path="/coach/customers/:id" element={<Guard><CoachCustomerDetail /></Guard>} />
                   <Route path="/coach/followups" element={<Guard><CoachFollowups /></Guard>} />
                   <Route path="/coach/tools" element={<Guard><CoachTools /></Guard>} />
                   <Route path="/coach/profile" element={<Guard><StaffProfile /></Guard>} />
