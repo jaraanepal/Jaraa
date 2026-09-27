@@ -5,6 +5,7 @@ import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, apiErrorMessage } from "../components/ui";
 import { PasswordFields } from "../components/PasswordInput";
 import { GoogleButton } from "../components/GoogleButton";
+import { FacebookButton } from "../components/FacebookButton";
 import { checkPassword, EMAIL_RE, NEPAL_MOBILE } from "../lib/password";
 
 type Method = "email" | "phone";
@@ -80,6 +81,7 @@ export default function Signup() {
       {error && <ErrorCard message={error} />}
 
       <GoogleButton />
+      <FacebookButton />
       <div className="or-divider" aria-hidden="true"><span>{t("auth.orDivider")}</span></div>
 
       <div className="card">

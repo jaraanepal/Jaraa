@@ -82,6 +82,37 @@ Vite inlines them, so changing them needs a rebuild):
    the Google/Supabase token is never stored — only the email is used to
    find-or-create the app user.
 
+## "Continue with Facebook" (Supabase Auth Facebook OAuth)
+
+Mirrors the Google flow. Client `FacebookButton` renders only when the
+build-time flag `VITE_FACEBOOK_OAUTH_ENABLED=true`. The server endpoint
+`POST /api/v1/auth/facebook` needs the same `SUPABASE_URL` /
+`SUPABASE_ANON_KEY` as Google (already required above).
+
+**Client build-time vars** (Render env *before* the client builds):
+
+| Variable | Value | Notes |
+|---|---|---|
+| `VITE_FACEBOOK_OAUTH_ENABLED` | `true` to show the button | Renders null when not `true`. |
+| `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` | Shared with Google. |
+| `VITE_PUBLIC_BASE_URL` | Same as `PUBLIC_BASE_URL` | Shared with Google. |
+
+**How to enable Facebook sign-in (founder steps):**
+
+1. [developers.facebook.com](https://developers.facebook.com) → create an app →
+   add the **Facebook Login** product → in its settings add the Valid OAuth
+   Redirect URI: `https://<supabase-ref>.supabase.co/auth/v1/callback`.
+2. Supabase dashboard → **Authentication → Sign In → Facebook** → enable and
+   paste the Meta App ID + App Secret.
+3. In the Meta app dashboard, whitelist the app domain and switch the app
+   from **Development** to **Live** mode — otherwise only test users can log
+   in and real customers get an error.
+4. Set `VITE_FACEBOOK_OAUTH_ENABLED=true` in Render env and redeploy
+   (rebuild). The app exchanges the Facebook token server-side via
+   `POST /auth/facebook`; only the email is used to find-or-create the app
+   user. No app review is needed for the basic `email` + `public_profile`
+   permissions.
+
 ## Render-provided (do not set manually)
 
 `PORT` — Render injects it; the server listens on `process.env.PORT`.

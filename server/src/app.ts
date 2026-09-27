@@ -3,7 +3,7 @@ import path from "node:path";
 import { authOptional } from "./middleware/auth";
 import { authRoutes } from "./modules/auth/routes";
 import { emailOtpRoutes } from "./modules/auth/emailotp";
-import { googleAuthRoutes } from "./modules/auth/google";
+import { oauthRoutes } from "./modules/auth/oauth";
 import { meRoutes } from "./modules/me/routes";
 import { scansRoutes } from "./modules/scans/routes";
 import { doctorRoutes } from "./modules/doctor/routes";
@@ -47,7 +47,7 @@ export function buildApp(deps: Deps, opts: AppOptions = {}) {
   api.use(authOptional(deps.jwtSecret));
   api.use("/auth", authRoutes(deps));
   api.use("/auth", emailOtpRoutes(deps));
-  api.use("/auth", googleAuthRoutes(deps));
+  api.use("/auth", oauthRoutes(deps));
   api.use("/me", meRoutes(deps));
   api.use("/scans", scansRoutes(deps));
   api.use("/doctor", doctorRoutes(deps));

@@ -112,6 +112,8 @@ p { margin: 5px 0; }
 .btn-gold { background: var(--gold); color: #fff; }
 .btn-google { background: #fff; color: #1f2937; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 10px; }
 .btn-google:active { background: #f3f4f6; }
+.btn-facebook { background: #fff; color: #1f2937; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 10px; }
+.btn-facebook:active { background: #f3f4f6; }
 .google-btn-wrap { margin: 4px 0; }
 .or-divider { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: var(--mut); font-size: 12px; font-weight: 600; }
 .or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -737,6 +739,8 @@ a { color: var(--green); }
 :root[data-theme="dark"] .btn-g { background: #2e3831; color: var(--ink); }
 :root[data-theme="dark"] .btn-google { background: #222c26; color: var(--ink); border-color: var(--line); }
 :root[data-theme="dark"] .btn-google:active { background: #2b352e; }
+:root[data-theme="dark"] .btn-facebook { background: #222c26; color: var(--ink); border-color: var(--line); }
+:root[data-theme="dark"] .btn-facebook:active { background: #2b352e; }
 
 /* bottom nav (A.4): dark surface, readable inactive labels */
 :root[data-theme="dark"] .bottomnav { background: #141b17; border-top-color: var(--line); }

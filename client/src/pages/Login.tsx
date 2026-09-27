@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLang } from "../i18n/LanguageContext";
 import { ErrorCard, apiErrorMessage, toast } from "../components/ui";
 import { GoogleButton } from "../components/GoogleButton";
+import { FacebookButton } from "../components/FacebookButton";
 import { Icon } from "../components/icons";
 import { EMAIL_RE, NEPAL_MOBILE } from "../lib/password";
 
@@ -144,6 +145,7 @@ export default function Login() {
 
       <div className="rise" style={{ animationDelay: "90ms" }}>
         <GoogleButton />
+        <FacebookButton />
       </div>
       <div className="or-divider rise" style={{ animationDelay: "140ms" }} aria-hidden="true">
         <span>{t("auth.orDivider")}</span>

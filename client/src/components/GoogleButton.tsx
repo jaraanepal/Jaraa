@@ -23,6 +23,14 @@ const ENABLED = import.meta.env.VITE_GOOGLE_OAUTH_ENABLED === "true";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
 const API = `${(import.meta.env.VITE_API_BASE_URL as string | undefined) || ""}/api/v1`;
 
+/**
+ * Marks which provider started the OAuth redirect, so that on the shared
+ * /auth/callback landing only that provider's button exchanges the token.
+ * (Both buttons mount on the callback page.) Google keeps the legacy
+ * behaviour when the marker is absent.
+ */
+export const OAUTH_PROVIDER_KEY = "jaraa:oauth_provider";
+
 function GoogleGlyph() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -43,6 +51,9 @@ export function GoogleButton({ showButton = true }: { showButton?: boolean }) {
   useEffect(() => {
     if (!ENABLED) return;
     if (!window.location.pathname.endsWith("/auth/callback")) return;
+    const startedBy = sessionStorage.getItem(OAUTH_PROVIDER_KEY);
+    if (startedBy && startedBy !== "google") return; // another provider's flow
+    sessionStorage.removeItem(OAUTH_PROVIDER_KEY);
     const params = new URLSearchParams(window.location.hash.slice(1));
     const accessToken = params.get("access_token");
     const oauthError = params.get("error_description") || params.get("error");
@@ -81,6 +92,7 @@ export function GoogleButton({ showButton = true }: { showButton?: boolean }) {
       setError("Google sign-in is not configured (VITE_SUPABASE_URL unset).");
       return;
     }
+    sessionStorage.setItem(OAUTH_PROVIDER_KEY, "google");
     const base = ((import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined) || window.location.origin).replace(/\/$/, "");
     const url =
       `${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/authorize?provider=google` +
