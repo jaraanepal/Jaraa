@@ -15,9 +15,9 @@ import { setAccessToken } from "../api/client";
  * stores the access JWT, and navigates home. The httpOnly refresh cookie
  * set by /auth/google lets the API client silently refresh afterwards.
  *
- * NOTE: the integrator places this component on the login / sign-up pages;
- * it handles the /auth/callback landing itself (the SPA fallback serves
- * index.html there), so no router changes are needed.
+ * NOTE: the integrator places this component on the login / sign-up pages.
+ * The /auth/callback route (AuthCallback page) also mounts it with
+ * showButton={false} so the token exchange runs on the callback landing.
  */
 const ENABLED = import.meta.env.VITE_GOOGLE_OAUTH_ENABLED === "true";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
@@ -34,7 +34,7 @@ function GoogleGlyph() {
   );
 }
 
-export function GoogleButton() {
+export function GoogleButton({ showButton = true }: { showButton?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,10 +90,12 @@ export function GoogleButton() {
 
   return (
     <div className="google-btn-wrap">
-      <button type="button" className="btn btn-google" onClick={start} disabled={busy} aria-label="Continue with Google">
-        <GoogleGlyph />
-        <span>{busy ? "Signing in…" : "Continue with Google"}</span>
-      </button>
+      {showButton && (
+        <button type="button" className="btn btn-google" onClick={start} disabled={busy} aria-label="Continue with Google">
+          <GoogleGlyph />
+          <span>{busy ? "Signing in…" : "Continue with Google"}</span>
+        </button>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
