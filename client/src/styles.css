@@ -64,7 +64,7 @@ body {
 .langtoggle button { border: 0; background: transparent; color: #fff; font-weight: 700; font-size: 12px; min-height: 44px; min-width: 48px; cursor: pointer; }
 .langtoggle button.on { background: #fff; color: var(--green-d); }
 
-.escapebar { background: #fff8e6; border-bottom: 1px solid var(--line); padding: 6px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+.escapebar { background: #fff8e6; border-bottom: 1px solid var(--line); padding: 6px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; color: #5c4400; }
 .escapebar button { background: none; border: 0; color: #7a5b00; font-weight: 700; font-size: 12px; min-height: 44px; cursor: pointer; text-decoration: underline; padding: 8px 2px; }
 
 .main { flex: 1; padding: 10px 10px 100px; }
@@ -215,7 +215,7 @@ table.grid input { border: 1px solid var(--line); border-radius: 8px; min-height
 .flagrow { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
 .flagrow code { font-size: 12px; background: #eef2ef; padding: 2px 8px; border-radius: 6px; }
 .sla { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--bad); }
-.kbd { font-family: monospace; background: #eef2ef; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+.kbd { font-family: monospace; background: #eef2ef; color: var(--ink); padding: 2px 8px; border-radius: 6px; font-size: 12px; }
 
 /* ---------- toast / modal ---------- */
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 80px; background: #101915; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 200; max-width: 92%; display: none; box-shadow: 0 4px 16px rgba(0,0,0,.3); text-align: center; }
@@ -716,4 +716,166 @@ a { color: var(--green); }
 @media (min-width: 1280px) {
   .iv-wrap, .hs-wrap { max-width: 860px; }
   .hs-pcard { padding: 20px; }
+}
+
+/* ============ v12: whole-site dark-mode contrast audit ============
+   Every rule below pins an explicit dark-mode pair — no light-mode color
+   is left to inherit onto a dark surface (or vice versa). Brand palette
+   stays dark-green/cream: light-mode greens become #d3e4d8/#9fd3ae on dark,
+   golds become #e0bd6e/#e8c96a, reds become #ef9a8d. */
+
+/* headings + links + icon buttons */
+:root[data-theme="dark"] h1, :root[data-theme="dark"] h2, :root[data-theme="dark"] h3 { color: #d3e4d8; }
+:root[data-theme="dark"] a, :root[data-theme="dark"] .linklike { color: #9fd3ae; }
+:root[data-theme="dark"] .iconbtn { color: #9fd3ae; }
+
+/* cream escape banner (A.1): dark amber surface, light text */
+:root[data-theme="dark"] .escapebar { background: #2a2417; border-bottom-color: var(--line); color: #ecdcb2; }
+:root[data-theme="dark"] .escapebar button { color: #e8c96a; }
+
+/* buttons (A.2/A.3): every variant gets an explicit dark pair */
+:root[data-theme="dark"] .btn-g { background: #2e3831; color: var(--ink); }
+:root[data-theme="dark"] .btn-google { background: #222c26; color: var(--ink); border-color: var(--line); }
+:root[data-theme="dark"] .btn-google:active { background: #2b352e; }
+
+/* bottom nav (A.4): dark surface, readable inactive labels */
+:root[data-theme="dark"] .bottomnav { background: #141b17; border-top-color: var(--line); }
+:root[data-theme="dark"] .bottomnav a { color: #98a39d; }
+:root[data-theme="dark"] .bottomnav a.active { color: #d3e4d8; background: #24382e; }
+
+/* drawer */
+:root[data-theme="dark"] .drawer-head strong { color: #d3e4d8; }
+:root[data-theme="dark"] .drawer-link svg { color: #7fb98f; }
+:root[data-theme="dark"] .drawer-link.active { background: #24382e; color: #d3e4d8; }
+:root[data-theme="dark"] .drawer-logout-btn, :root[data-theme="dark"] .drawer-logout-btn svg { color: #ef9a8d; }
+:root[data-theme="dark"] .drawer-settings .langtoggle { border-color: #7fb98f; }
+:root[data-theme="dark"] .drawer-settings .langtoggle button { color: #d3e4d8; }
+:root[data-theme="dark"] .drawer-settings .langtoggle button.on { background: #7fb98f; color: #142a1e; }
+
+/* message boxes */
+:root[data-theme="dark"] .noticebox { background: #2a2417; border-color: var(--gold); }
+:root[data-theme="dark"] .noticebox h3 { color: #e0bd6e; }
+:root[data-theme="dark"] .okbox { background: #1c2b21; border-color: #3f7a54; }
+:root[data-theme="dark"] .okbox h3 { color: #9fd3ae; }
+:root[data-theme="dark"] .flagbox, :root[data-theme="dark"] .errbox { background: #331c17; }
+:root[data-theme="dark"] .flagbox h3 { color: #ef9a8d; }
+
+/* chat / scan option bubbles */
+:root[data-theme="dark"] .bubble { background: #1a231e; border-color: var(--line); }
+:root[data-theme="dark"] .opts button { background: #1a231e; color: #d3e4d8; border-color: #3f7a54; }
+:root[data-theme="dark"] .opts button.sel { background: var(--green); border-color: var(--green); color: #fff; }
+:root[data-theme="dark"] .angle, :root[data-theme="dark"] .rootcard { background: #1a231e; }
+:root[data-theme="dark"] .timeline { background: #1a231e; }
+:root[data-theme="dark"] .tl-ends { color: #98a39d; }
+:root[data-theme="dark"] .palette button { background: #1a231e; color: var(--ink); }
+:root[data-theme="dark"] .palette button.sel { background: #24382e; color: #d3e4d8; border-color: #7fb98f; }
+:root[data-theme="dark"] .rootmap-svg { background: #1a231e; }
+
+/* P-1 interview */
+:root[data-theme="dark"] .iv-strip { background: #1a231e; }
+:root[data-theme="dark"] .iv-strip-title { color: #d3e4d8; }
+:root[data-theme="dark"] .iv-chip { background: #1a231e; color: #d3e4d8; border-color: #3f7a54; }
+:root[data-theme="dark"] .iv-chip:active { background: #24382e; }
+:root[data-theme="dark"] .iv-chip.on { background: var(--green); border-color: var(--green); color: #fff; }
+:root[data-theme="dark"] .iv-backlink { color: #9fd3ae; }
+
+/* P-2 hair story */
+:root[data-theme="dark"] .hs-script { border-color: #3f7a54; }
+:root[data-theme="dark"] .hs-script button { background: #1a231e; color: #d3e4d8; }
+:root[data-theme="dark"] .hs-script button.on { background: var(--green); color: #fff; }
+:root[data-theme="dark"] .hs-boundary { color: #cfe0d4; }
+:root[data-theme="dark"] .hs-angles button { background: #1a231e; color: var(--ink); }
+:root[data-theme="dark"] .hs-angles button.on { border-color: #7fb98f; color: #d3e4d8; }
+:root[data-theme="dark"] .hs-drill { color: #9fd3ae; }
+
+/* home animated blocks */
+:root[data-theme="dark"] .jh-dot { background: #1a231e; border-color: var(--line); color: #98a39d; }
+:root[data-theme="dark"] .jh-nlabel { color: #d3e4d8; }
+:root[data-theme="dark"] .jh-node.sel .jh-nlabel { color: #9fd3ae; }
+:root[data-theme="dark"] .jh-stagedesc { background: #24382e; color: #d3e4d8; }
+:root[data-theme="dark"] .jh-stagedesc b { color: #eef4ef; }
+:root[data-theme="dark"] .jh-journey { background: linear-gradient(150deg, #1c2620, #2a2417); border-color: var(--gold); }
+
+/* referral code box (A.5) + inline code */
+:root[data-theme="dark"] .kbd, :root[data-theme="dark"] .flagrow code { background: #2b352e; color: var(--ink); }
+
+/* login segmented control + icon fields */
+:root[data-theme="dark"] .seg { background: #222c26; }
+:root[data-theme="dark"] .seg button { color: #98a39d; }
+:root[data-theme="dark"] .seg button.on { color: #fff; }
+:root[data-theme="dark"] .seg-ind { background: #3f7a54; }
+:root[data-theme="dark"] .field { background: #222c26; border-color: var(--line); }
+:root[data-theme="dark"] .field > svg { color: #98a39d; }
+
+/* dashboards */
+:root[data-theme="dark"] .statvalue { color: var(--ink); }
+:root[data-theme="dark"] .dashlink svg { color: #7fb98f; }
+:root[data-theme="dark"] .tl-step.cur .tl-label { color: #d3e4d8; }
+:root[data-theme="dark"] .sla { color: #ef9a8d; }
+
+/* chips */
+:root[data-theme="dark"] .chip { background: #24382e; color: #d3e4d8; }
+:root[data-theme="dark"] .chip.red { background: #3a1f1a; color: #f0a49a; }
+:root[data-theme="dark"] .chip.amber { background: #3a2c17; color: #e8c96a; }
+:root[data-theme="dark"] .chip.gold { background: #3a3122; color: #e0bd6e; }
+:root[data-theme="dark"] .chip.grey { background: #2b352e; color: #98a39d; }
+
+/* tables, modal, address card, misc */
+:root[data-theme="dark"] table.grid th { background: #222c26; color: var(--ink); }
+:root[data-theme="dark"] .modal { background: #1a231e; color: var(--ink); }
+:root[data-theme="dark"] .addr-card { background: #1a231e; }
+:root[data-theme="dark"] .demo-switch button { background: #1a231e; color: var(--ink); }
+:root[data-theme="dark"] .demo-switch button.sel { border-color: #7fb98f; background: #24382e; color: #d3e4d8; }
+:root[data-theme="dark"] .skeleton { background: linear-gradient(90deg, #222c26 25%, #2b352e 50%, #222c26 75%); background-size: 200% 100%; }
+
+/* ============ v12: tablet + desktop responsive ============
+   Mobile (<768px) keeps the phone-column shell above unchanged.
+   Shell width is driven by --maxw so the app column, bottom nav and
+   modal all widen together at each breakpoint. */
+.deskrow { display: block; }
+.deskcol { display: block; }
+.sidenav { display: none; }
+
+/* ---- tablet: 768–1023px — wider shell, bottom nav stays ---- */
+@media (min-width: 768px) {
+  :root { --maxw: 920px; }
+  .modal { max-width: 640px; }
+  .statgrid { grid-template-columns: repeat(3, 1fr); }
+  .jh-qa { grid-template-columns: repeat(4, 1fr); }
+  .palette { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ---- desktop: ≥1024px — full app shell, staff side nav ---- */
+@media (min-width: 1024px) {
+  :root { --maxw: 1240px; }
+  /* themed page background — no black bars around the app column */
+  body { background: var(--cream); }
+  :root[data-theme="dark"] body { background: #101712; }
+  .app { box-shadow: none; }
+  .deskrow { display: flex; align-items: stretch; flex: 1; }
+  .deskcol { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .deskcol .main { flex: 1; }
+  /* staff roles: persistent left sidebar replaces the bottom nav */
+  .app-role-admin .sidenav, .app-role-doctor .sidenav,
+  .app-role-pharmacy .sidenav, .app-role-coach .sidenav {
+    display: flex; flex-direction: column;
+    width: 252px; flex: none;
+    background: var(--cream);
+    border-right: 1px solid var(--line);
+    padding: 14px 8px 20px;
+    position: sticky; top: 0;
+    height: 100vh; overflow-y: auto;
+  }
+  .sidenav .side-title {
+    padding: 4px 12px 10px; font-size: 12px; font-weight: 800;
+    letter-spacing: 1.2px; text-transform: uppercase; color: var(--mut);
+  }
+  .app-role-admin .bottomnav, .app-role-doctor .bottomnav,
+  .app-role-pharmacy .bottomnav, .app-role-coach .bottomnav { display: none; }
+  .app-role-admin .main, .app-role-doctor .main,
+  .app-role-pharmacy .main, .app-role-coach .main { padding-bottom: 24px; }
+  /* dashboards go multi-column; tables already render full-width */
+  .statgrid { grid-template-columns: repeat(4, 1fr); }
+  .jh-qa { grid-template-columns: repeat(6, 1fr); }
+  .palette { grid-template-columns: repeat(6, 1fr); }
 }

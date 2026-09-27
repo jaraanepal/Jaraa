@@ -126,6 +126,65 @@ function BottomNav() {
  * - coach: my customers, follow-ups, profile
  * Every drawer ends with Settings (language) + a two-step Log out.
  */
+/** Role-aware nav links (Problem 2) — shared by the mobile drawer and the
+    desktop staff side nav, so both always show the same items. */
+function roleLinks(role: string | null): NavItem[] {
+  return role === "admin"
+  ? [
+      { to: "/admin", key: "nav.admin", icon: Icon.gear, end: true },
+      { to: "/admin/kits", key: "adminKits.title", icon: Icon.box },
+      { to: "/admin/orders", key: "drawer.orders", icon: Icon.truck },
+      { to: "/admin/users?view=staff", key: "drawer.staff", icon: Icon.user },
+      { to: "/admin/users", key: "drawer.users", icon: Icon.user },
+      { to: "/admin/flags", key: "admin.flagsTitle", icon: Icon.alert },
+      { to: "/admin/audit", key: "admin.auditTitle", icon: Icon.doc },
+      { to: "/admin/broadcast", key: "p12.admin.broadcast", icon: Icon.chat },
+      { to: "/admin/refunds", key: "p12.admin.refunds", icon: Icon.chart },
+      { to: "/admin/sla", key: "p12.admin.sla", icon: Icon.clock },
+      { to: "/admin/verifications", key: "p12.admin.verification", icon: Icon.check },
+      { to: "/admin/finance", key: "p12.admin.finance", icon: Icon.chart },
+      { to: "/admin/tickets", key: "p12.admin.tickets", icon: Icon.chat },
+      { to: "/admin/articles", key: "p12.admin.articles", icon: Icon.book },
+      { to: "/admin/kit-analytics", key: "p12.admin.kitAnalytics", icon: Icon.box },
+      { to: "/admin/tools", key: "p12b.admin.title", icon: Icon.gear },
+      { to: "/admin/profile", key: "nav.profile", icon: Icon.user },
+    ]
+  : role === "doctor"
+    ? [
+        { to: "/doctor", key: "nav.doctor", icon: Icon.doc, end: true },
+        { to: "/doctor/reviewed", key: "doctorDash.reviewedTab", icon: Icon.check },
+        { to: "/doctor/followups", key: "p12.doctor.followups", icon: Icon.chat },
+        { to: "/doctor/availability", key: "p12.doctor.availability", icon: Icon.clock },
+        { to: "/doctor/tools", key: "p12b.doctor.title", icon: Icon.gear },
+        { to: "/doctor/profile", key: "nav.profile", icon: Icon.user },
+      ]
+    : role === "pharmacy"
+      ? [
+          { to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck, end: true },
+          { to: "/pharmacy/tools", key: "p12b.pharmacy.title", icon: Icon.gear },
+          { to: "/pharmacy/profile", key: "nav.profile", icon: Icon.user },
+        ]
+      : role === "coach"
+        ? [
+            { to: "/coach", key: "nav.coach", icon: Icon.book, end: true },
+            { to: "/coach/followups", key: "coachDash.followups", icon: Icon.chat },
+            { to: "/coach/tools", key: "p12b.coach.title", icon: Icon.gear },
+            { to: "/coach/profile", key: "nav.profile", icon: Icon.user },
+          ]
+        : [
+            { to: "/scan", key: "nav.scan", icon: Icon.scan },
+            { to: "/plan", key: "nav.plan", icon: Icon.plan },
+            { to: "/habits", key: "p12.customer.habitCheckin", icon: Icon.check },
+            { to: "/orders", key: "nav.orders", icon: Icon.truck },
+            { to: "/wishlist", key: "p12.customer.wishlist", icon: Icon.box },
+            { to: "/my-challenges", key: "p12.customer.myChallenges", icon: Icon.chart },
+            { to: "/referral", key: "p12.customer.referral", icon: Icon.user },
+            { to: "/help", key: "p12.customer.help", icon: Icon.chat },
+            { to: "/my-data", key: "p12.customer.myData", icon: Icon.doc },
+            { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
+          ];
+}
+
 function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useLang();
   const { role, logout } = useAuth();
@@ -173,61 +232,7 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
     };
   }, [open, onClose]);
 
-  const links: NavItem[] =
-    role === "admin"
-      ? [
-          { to: "/admin", key: "nav.admin", icon: Icon.gear, end: true },
-          { to: "/admin/kits", key: "adminKits.title", icon: Icon.box },
-          { to: "/admin/orders", key: "drawer.orders", icon: Icon.truck },
-          { to: "/admin/users?view=staff", key: "drawer.staff", icon: Icon.user },
-          { to: "/admin/users", key: "drawer.users", icon: Icon.user },
-          { to: "/admin/flags", key: "admin.flagsTitle", icon: Icon.alert },
-          { to: "/admin/audit", key: "admin.auditTitle", icon: Icon.doc },
-          { to: "/admin/broadcast", key: "p12.admin.broadcast", icon: Icon.chat },
-          { to: "/admin/refunds", key: "p12.admin.refunds", icon: Icon.chart },
-          { to: "/admin/sla", key: "p12.admin.sla", icon: Icon.clock },
-          { to: "/admin/verifications", key: "p12.admin.verification", icon: Icon.check },
-          { to: "/admin/finance", key: "p12.admin.finance", icon: Icon.chart },
-          { to: "/admin/tickets", key: "p12.admin.tickets", icon: Icon.chat },
-          { to: "/admin/articles", key: "p12.admin.articles", icon: Icon.book },
-          { to: "/admin/kit-analytics", key: "p12.admin.kitAnalytics", icon: Icon.box },
-          { to: "/admin/tools", key: "p12b.admin.title", icon: Icon.gear },
-          { to: "/admin/profile", key: "nav.profile", icon: Icon.user },
-        ]
-      : role === "doctor"
-        ? [
-            { to: "/doctor", key: "nav.doctor", icon: Icon.doc, end: true },
-            { to: "/doctor/reviewed", key: "doctorDash.reviewedTab", icon: Icon.check },
-            { to: "/doctor/followups", key: "p12.doctor.followups", icon: Icon.chat },
-            { to: "/doctor/availability", key: "p12.doctor.availability", icon: Icon.clock },
-            { to: "/doctor/tools", key: "p12b.doctor.title", icon: Icon.gear },
-            { to: "/doctor/profile", key: "nav.profile", icon: Icon.user },
-          ]
-        : role === "pharmacy"
-          ? [
-              { to: "/pharmacy", key: "nav.pharmacy", icon: Icon.truck, end: true },
-              { to: "/pharmacy/tools", key: "p12b.pharmacy.title", icon: Icon.gear },
-              { to: "/pharmacy/profile", key: "nav.profile", icon: Icon.user },
-            ]
-          : role === "coach"
-            ? [
-                { to: "/coach", key: "nav.coach", icon: Icon.book, end: true },
-                { to: "/coach/followups", key: "coachDash.followups", icon: Icon.chat },
-                { to: "/coach/tools", key: "p12b.coach.title", icon: Icon.gear },
-                { to: "/coach/profile", key: "nav.profile", icon: Icon.user },
-              ]
-            : [
-                { to: "/scan", key: "nav.scan", icon: Icon.scan },
-                { to: "/plan", key: "nav.plan", icon: Icon.plan },
-                { to: "/habits", key: "p12.customer.habitCheckin", icon: Icon.check },
-                { to: "/orders", key: "nav.orders", icon: Icon.truck },
-                { to: "/wishlist", key: "p12.customer.wishlist", icon: Icon.box },
-                { to: "/my-challenges", key: "p12.customer.myChallenges", icon: Icon.chart },
-                { to: "/referral", key: "p12.customer.referral", icon: Icon.user },
-                { to: "/help", key: "p12.customer.help", icon: Icon.chat },
-                { to: "/my-data", key: "p12.customer.myData", icon: Icon.doc },
-                { to: "/teleconsult", key: "teleconsult.title", icon: Icon.video },
-              ];
+  const links = roleLinks(role);
 
   async function doLogout() {
     setConfirmingLogout(false);
@@ -303,6 +308,35 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
+/**
+ * Persistent left sidebar for staff roles on desktop (≥1024px, v12).
+ * Same links as the mobile drawer; hidden by CSS below the desktop
+ * breakpoint and for the customer role (customers keep the bottom nav).
+ */
+function SideNav() {
+  const { t } = useLang();
+  const { role } = useAuth();
+  if (role !== "admin" && role !== "doctor" && role !== "pharmacy" && role !== "coach") return null;
+  return (
+    <aside className="sidenav" aria-label={t("nav.menu")}>
+      <div className="side-title">{t("nav.menu")}</div>
+      <nav>
+        {roleLinks(role).map((i) => (
+          <NavLink
+            key={i.to}
+            to={i.to}
+            end={i.end}
+            className={({ isActive }) => `drawer-link${isActive ? " active" : ""}`}
+          >
+            {i.icon({ size: 20 })}
+            <span>{t(i.key)}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 export default function Layout() {
   const { t } = useLang();
   const { isAuthed, role, logout } = useAuth();
@@ -313,7 +347,7 @@ export default function Layout() {
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
-    <div className="app">
+    <div className={`app app-role-${role ?? "guest"}`}>
       <header className="topbar">
         {isAuthed && !hideChrome && (
           <button
@@ -352,19 +386,24 @@ export default function Layout() {
 
       {!hideChrome && <EscapeHatch />}
 
-      <main className="main">
-        <InstallPrompt />
-        {/* U39: offline banner (batch 4) */}
-        <OfflineBanner />
-        <Outlet />
-      </main>
+      <div className="deskrow">
+        {!hideChrome && isAuthed && <SideNav />}
+        <div className="deskcol">
+          <main className="main">
+            <InstallPrompt />
+            {/* U39: offline banner (batch 4) */}
+            <OfflineBanner />
+            <Outlet />
+          </main>
 
-      <footer className="appfoot">
-        <img src="/logo.png" alt="Jaraa logo" />
-        <div className="tag">{t("footer.tagline")}</div>
-        <p>{t("footer.rights")}</p>
-        <p>{t("footer.madeIn")}{role ? ` · ${role}` : ""}</p>
-      </footer>
+          <footer className="appfoot">
+            <img src="/logo.png" alt="Jaraa logo" />
+            <div className="tag">{t("footer.tagline")}</div>
+            <p>{t("footer.rights")}</p>
+            <p>{t("footer.madeIn")}{role ? ` · ${role}` : ""}</p>
+          </footer>
+        </div>
+      </div>
 
       {!hideChrome && isAuthed && <BottomNav />}
       {!hideChrome && isAuthed && <Drawer open={drawerOpen} onClose={closeDrawer} />}
