@@ -621,7 +621,7 @@ a { color: var(--green); }
 /* ---------------- Batch-3 (009) D27: printable case export --- */
 @media print {
   /* Hide app chrome: header, nav, drawers, toasts, buttons, links. */
-  .topbar, .bottomnav, .drawer, .toast-host, .modalwrap,
+  .topbar, .bottomnav, .sidenav, .drawer, .toast-host, .modalwrap,
   .screen button, .screen .btn, .screen .linklike, .tabrow {
     display: none !important;
   }
@@ -828,52 +828,65 @@ a { color: var(--green); }
 :root[data-theme="dark"] .demo-switch button.sel { border-color: #7fb98f; background: #24382e; color: #d3e4d8; }
 :root[data-theme="dark"] .skeleton { background: linear-gradient(90deg, #222c26 25%, #2b352e 50%, #222c26 75%); background-size: 200% 100%; }
 
-/* ============ v12: tablet + desktop responsive ============
-   Mobile (<768px) keeps the phone-column shell above unchanged.
-   Shell width is driven by --maxw so the app column, bottom nav and
-   modal all widen together at each breakpoint. */
+/* ============ v13: true fluid responsive shell ============
+   - Mobile (<768px): phone-column shell + bottom nav — UNCHANGED.
+   - Tablet (768–1023px): fluid full-width app, bottom nav stays, wider grids.
+   - Desktop (≥1024px): fluid full-width app, full-viewport header, sticky
+     left sidebar for ALL roles (incl. customer), bottom nav hidden.
+   Safe-area (Problem 1, kept): .topbar uses env(safe-area-inset-top);
+   .bottomnav and .appfoot use env(safe-area-inset-bottom). */
 .deskrow { display: block; }
 .deskcol { display: block; }
 .sidenav { display: none; }
 
-/* ---- tablet: 768–1023px — wider shell, bottom nav stays ---- */
+/* ---- tablet: 768–1023px — fluid width, bottom nav stays ---- */
 @media (min-width: 768px) {
-  :root { --maxw: 920px; }
+  .app { max-width: none; box-shadow: none; }
+  .bottomnav { max-width: none; left: 0; transform: none; }
+  .main {
+    max-width: min(920px, calc(100% - 32px));
+    margin-left: auto; margin-right: auto;
+  }
   .modal { max-width: 640px; }
   .statgrid { grid-template-columns: repeat(3, 1fr); }
   .jh-qa { grid-template-columns: repeat(4, 1fr); }
   .palette { grid-template-columns: repeat(4, 1fr); }
 }
 
-/* ---- desktop: ≥1024px — full app shell, staff side nav ---- */
+/* ---- desktop: ≥1024px — fluid shell, sidebar for every role ---- */
 @media (min-width: 1024px) {
-  :root { --maxw: 1240px; }
-  /* themed page background — no black bars around the app column */
+  /* themed page background — no black bars around the app at any width */
   body { background: var(--cream); }
   :root[data-theme="dark"] body { background: #101712; }
-  .app { box-shadow: none; }
-  .deskrow { display: flex; align-items: stretch; flex: 1; }
+  .app { max-width: none; box-shadow: none; }
+  /* the topbar already spans the full .app width = full viewport here */
+  .hamburger { display: none; } /* sidebar replaces the drawer on desktop */
+  /* bottom nav never shows on desktop — any role */
+  .bottomnav { display: none; }
+  .deskrow { display: flex; align-items: flex-start; flex: 1; }
   .deskcol { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .deskcol .main { flex: 1; }
-  /* staff roles: persistent left sidebar replaces the bottom nav */
-  .app-role-admin .sidenav, .app-role-doctor .sidenav,
-  .app-role-pharmacy .sidenav, .app-role-coach .sidenav {
+  .deskcol .main {
+    flex: 1; width: 100%;
+    max-width: min(1280px, calc(100% - 48px));
+    margin-left: auto; margin-right: auto;
+    padding-bottom: 24px;
+  }
+  /* persistent sticky sidebar for every role (incl. customer) */
+  .sidenav {
     display: flex; flex-direction: column;
-    width: 252px; flex: none;
+    width: 264px; flex: none;
     background: var(--cream);
     border-right: 1px solid var(--line);
     padding: 14px 8px 20px;
-    position: sticky; top: 0;
-    height: 100vh; overflow-y: auto;
+    position: sticky;
+    top: calc(60px + env(safe-area-inset-top));
+    height: calc(100vh - 60px - env(safe-area-inset-top));
+    overflow-y: auto;
   }
   .sidenav .side-title {
     padding: 4px 12px 10px; font-size: 12px; font-weight: 800;
     letter-spacing: 1.2px; text-transform: uppercase; color: var(--mut);
   }
-  .app-role-admin .bottomnav, .app-role-doctor .bottomnav,
-  .app-role-pharmacy .bottomnav, .app-role-coach .bottomnav { display: none; }
-  .app-role-admin .main, .app-role-doctor .main,
-  .app-role-pharmacy .main, .app-role-coach .main { padding-bottom: 24px; }
   /* dashboards go multi-column; tables already render full-width */
   .statgrid { grid-template-columns: repeat(4, 1fr); }
   .jh-qa { grid-template-columns: repeat(6, 1fr); }

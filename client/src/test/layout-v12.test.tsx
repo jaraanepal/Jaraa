@@ -103,10 +103,16 @@ describe("v12 app shell", () => {
     expect(links).not.toContain(en.nav.admin);
   });
 
-  it("renders no side nav for customers", () => {
+  it("renders the customer side nav for the customer role (v13: all roles get the desktop sidebar)", () => {
     const { container } = renderApp("customer");
-    expect(container.querySelector("aside.sidenav")).toBeNull();
-    // customer bottom nav is untouched
+    const side = container.querySelector("aside.sidenav");
+    expect(side).not.toBeNull();
+    const links = within(side as HTMLElement)
+      .getAllByRole("link")
+      .map((a) => a.textContent ?? "");
+    expect(links).toContain(en.nav.scan);
+    expect(links).not.toContain(en.nav.admin);
+    // customer bottom nav still exists in the DOM for <1024px (CSS hides it on desktop)
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
   });
 

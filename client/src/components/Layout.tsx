@@ -309,14 +309,14 @@ function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 /**
- * Persistent left sidebar for staff roles on desktop (≥1024px, v12).
- * Same links as the mobile drawer; hidden by CSS below the desktop
- * breakpoint and for the customer role (customers keep the bottom nav).
+ * Persistent left sidebar on desktop (≥1024px, v13) — ALL roles including
+ * the customer. Same links as the mobile drawer, with active-link
+ * highlighting; hidden by CSS below the desktop breakpoint, where the
+ * bottom nav shows instead.
  */
 function SideNav() {
   const { t } = useLang();
   const { role } = useAuth();
-  if (role !== "admin" && role !== "doctor" && role !== "pharmacy" && role !== "coach") return null;
   return (
     <aside className="sidenav" aria-label={t("nav.menu")}>
       <div className="side-title">{t("nav.menu")}</div>
